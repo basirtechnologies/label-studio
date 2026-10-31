@@ -197,7 +197,8 @@ def emit_webhooks_for_instance_sync(organization, project, action, instance=None
 def run_webhook(webhook, action, payload=None):
     """Run one webhook for action.
 
-    This function must not raise any exceptions.
+    Basir: run_webhook_sync raises when the webhook does not answer 201; when this runs synchronously
+    (no Redis, or the RQ flag off) the exception reaches the caller.
 
     Will run a webhook in an RQ worker.
     """
