@@ -36,7 +36,10 @@ def forward_migration_job(*, migration_name: str) -> None:
         migration.save()
 
     try:
-        views = iterate_queryset(View.objects.all())
+        # Load only columns that exist at this point of the migration graph: when this job runs synchronously
+        # (no Redis) during `migrate`, later View columns (e.g. is_locked from 0019_view_lock_fields) don't exist
+        # yet on databases being upgraded, and selecting them fails. save(update_fields=['data']) only writes data.
+        views = iterate_queryset(View.objects.only('id', 'data'))
         updated_count = 0
 
         for view in views:
@@ -75,7 +78,8 @@ def reverse_migration_job(*, migration_name: str) -> None:
 
     logger.info(f'Starting reverse migration {migration_name}')
 
-    views = iterate_queryset(View.objects.all())
+    # Only columns that exist at this point of the migration graph (see forward_migration_job)
+    views = iterate_queryset(View.objects.only('id', 'data'))
     updated_count = 0
 
     for view in views:
