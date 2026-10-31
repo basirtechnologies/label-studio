@@ -8,6 +8,7 @@ import pytest
 from django.core.management import call_command
 from django.shortcuts import reverse
 from django.urls import get_resolver
+from organizations.models import Organization
 from tasks.models import Annotation, Task
 
 owner_statuses = {
@@ -388,8 +389,15 @@ def check_urls(urls, runner, match_statuses, project):
         r = runner.get(url)
         status['get'] = r.status_code
 
-        r = runner.post(url)
-        status['post'] = r.status_code
+        try:
+            r = runner.post(url)
+            status['post'] = r.status_code
+        except Organization.DoesNotExist:
+            # Basir legacy patch: an anonymous signup without an invite token fails on
+            # Organization.objects.get(token=...); no other URL may raise this.
+            if url != '/user/signup/':
+                raise
+            status['post'] = 500
 
         r = runner.put(url)
         status['put'] = r.status_code

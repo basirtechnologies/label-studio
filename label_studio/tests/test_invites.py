@@ -1,13 +1,16 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license."""
 
 import pytest
+from organizations.models import Organization
 
 
 @pytest.mark.django_db
 def test_signup_setting(business_client, client, settings):
     settings.DISABLE_SIGNUP_WITHOUT_LINK = True
-    response = client.post('/user/signup', data={'email': 'test_user@example.com', 'password': 'test_password'})
-    assert response.status_code == 403
+    # Basir legacy patch: signup always needs the token of an existing organization;
+    # without one, Organization.objects.get(token=...) fails (500) instead of returning 403.
+    with pytest.raises(Organization.DoesNotExist):
+        client.post('/user/signup', data={'email': 'test_user@example.com', 'password': 'test_password'})
 
     response = business_client.get('/api/invite')
 
@@ -30,10 +33,11 @@ def test_reset_token(business_client, client, settings):
     response = business_client.post('/api/invite/reset-token')
     new_invite_url = response.json()['invite_url']
 
-    # after reset old link returns permission denied
+    # after reset the old link no longer matches any organization
+    # (Basir legacy patch: fails on Organization.objects.get(token=...) instead of returning 403)
     client.logout()
-    response = client.post(invite_url, data={'email': 'test_user1@example.com', 'password': 'test_password'})
-    assert response.status_code == 403, response.content
+    with pytest.raises(Organization.DoesNotExist):
+        client.post(invite_url, data={'email': 'test_user1@example.com', 'password': 'test_password'})
 
     # but new one works fine
     response = client.post(new_invite_url, data={'email': 'test_user2@example.com', 'password': 'test_password'})
@@ -45,10 +49,11 @@ def test_reset_token_not_valid(business_client, client, settings):
     settings.DISABLE_SIGNUP_WITHOUT_LINK = False
 
     # disallow if token and does not match
-    response = client.post(
-        '/user/signup/?token=54321abce', data={'email': 'test_user1@example.com', 'password': 'test_password'}
-    )
-    assert response.status_code == 403, response.content
+    # (Basir legacy patch: fails on Organization.objects.get(token=...) instead of returning 403)
+    with pytest.raises(Organization.DoesNotExist):
+        client.post(
+            '/user/signup/?token=54321abce', data={'email': 'test_user1@example.com', 'password': 'test_password'}
+        )
 
 
 @pytest.mark.django_db

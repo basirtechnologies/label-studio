@@ -54,7 +54,8 @@ def register_ml_backend_mock(
         m.get(f'{url}/health', text=json.dumps({'status': 'UP'}))
     m.post(f'{url}/train', text=json.dumps({'status': 'ok', 'job_id': train_job_id}))
     m.post(f'{url}/predict', text=json.dumps(predictions or {}))
-    m.post(f'{url}/webhook', text=json.dumps({}))
+    # 201: with the Basir strict-webhook patch any other status raises (the ML backend gets an auto-created webhook)
+    m.post(f'{url}/webhook', status_code=201, text=json.dumps({}))
     m.get(f'{url}/versions', text=json.dumps({'versions': ['1', '2']}))
     return m
 

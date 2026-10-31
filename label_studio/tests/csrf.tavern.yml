@@ -6,7 +6,9 @@ marks:
   - django_live_url
   - enable_csrf
 stages:
-- id: login_csrf
+# Basir legacy patch: signup and login are csrf_exempt, so both succeed without a CSRF token.
+# (Empty database: the first signup needs no invite token.)
+- id: signup_csrf
   name: Sign up without csrf
   request:
     url: "{django_live_url}/user/signup?enforce_csrf_checks=1"
@@ -15,7 +17,7 @@ stages:
       password: 12345678
     method: POST
   response:
-    status_code: 403
+    status_code: 302
 
 - id: login_csrf
   name: Login without csrf
@@ -26,5 +28,5 @@ stages:
       password: 12345678
     method: POST
   response:
-    status_code: 403
+    status_code: 302
     

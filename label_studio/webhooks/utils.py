@@ -1,6 +1,7 @@
 import logging
 from functools import wraps
 
+import requests
 from core.feature_flags import flag_set
 from core.redis import start_job_async_or_sync
 from core.utils.common import load_func
@@ -44,7 +45,8 @@ def get_active_webhooks(organization, project, action):
 def run_webhook_sync(webhook, action, payload=None):
     """Run one webhook for action.
 
-    This function must not raise any exceptions.
+    Basir: raises a plain Exception when the webhook does not answer 201 (see below).
+    Other errors (connection problems, blocked URLs) are logged and swallowed.
     """
     data = {
         'action': action,
@@ -65,6 +67,20 @@ def run_webhook_sync(webhook, action, payload=None):
         logging.error(exc, exc_info=True)
 
     _record_webhook_delivery_result(webhook, response)
+
+    # Basir: a webhook that does not answer 201 fails loudly. The plain Exception is raised outside the
+    # try/except above on purpose, so it propagates to the caller and the action that triggered the webhook
+    # (e.g. submitting an annotation) fails when run synchronously.
+    if response is not None and response.status_code != 201:
+        try:
+            message = response.json().get('message', 'Unknown error')
+        except requests.RequestException as exc:
+            # Kept from the legacy patch: a non-JSON error body raised requests' JSONDecodeError (a
+            # RequestException), which the legacy `except requests.RequestException` caught and logged.
+            logging.error(exc, exc_info=True)
+            return None
+        raise Exception(message)
+
     return response
 
 
@@ -181,7 +197,8 @@ def emit_webhooks_for_instance_sync(organization, project, action, instance=None
 def run_webhook(webhook, action, payload=None):
     """Run one webhook for action.
 
-    This function must not raise any exceptions.
+    Basir: run_webhook_sync raises when the webhook does not answer 201; when this runs synchronously
+    (no Redis, or the RQ flag off) the exception reaches the caller.
 
     Will run a webhook in an RQ worker.
     """
