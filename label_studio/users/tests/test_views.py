@@ -9,7 +9,10 @@ from users.models import User
 
 @override_settings(ORG_INVITE_EXPIRATION_DAYS=30)
 class TestUserSignupInviteExpiration(TestCase):
-    """FIT-2685: an expired organization invite token must not allow signup."""
+    """FIT-2685: an expired organization invite token must not allow signup.
+
+    Basir legacy patch: user_signup no longer checks expiry (see test_basir_legacy_patches.py).
+    """
 
     @classmethod
     def setUpTestData(cls):
@@ -34,19 +37,21 @@ class TestUserSignupInviteExpiration(TestCase):
         assert User.objects.filter(email='invitee@example.com').exists()
 
     @override_settings(DISABLE_SIGNUP_WITHOUT_LINK=True)
-    def test_expired_token_is_rejected_when_link_required(self):
+    def test_expired_token_is_accepted_when_link_required(self):
+        # Basir legacy patch: signup looks the organization up by token only; expiry is not checked.
         self._expire_token()
 
         response = self._signup(self.organization.token)
 
-        assert response.status_code == 403
-        assert not User.objects.filter(email='invitee@example.com').exists()
+        assert response.status_code == 302
+        assert User.objects.get(email='invitee@example.com').active_organization_id == self.organization.id
 
     @override_settings(DISABLE_SIGNUP_WITHOUT_LINK=False)
-    def test_expired_token_is_rejected_when_link_optional(self):
+    def test_expired_token_is_accepted_when_link_optional(self):
+        # Basir legacy patch: signup looks the organization up by token only; expiry is not checked.
         self._expire_token()
 
         response = self._signup(self.organization.token)
 
-        assert response.status_code == 403
-        assert not User.objects.filter(email='invitee@example.com').exists()
+        assert response.status_code == 302
+        assert User.objects.get(email='invitee@example.com').active_organization_id == self.organization.id

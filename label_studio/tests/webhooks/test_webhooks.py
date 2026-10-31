@@ -49,7 +49,7 @@ def ml_start_training_webhook(configured_project):
 def test_run_webhook(setup_project_dialog, organization_webhook):
     webhook = organization_webhook
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         run_webhook(organization_webhook, WebhookAction.PROJECT_CREATED, {'data': 'test'})
 
     request_history = m.request_history
@@ -63,7 +63,7 @@ def test_run_webhook(setup_project_dialog, organization_webhook):
 def test_emit_webhooks(setup_project_dialog, organization_webhook):
     webhook = organization_webhook
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         emit_webhooks(webhook.organization, webhook.project, WebhookAction.PROJECT_CREATED, {'data': 'test'})
 
     request_history = m.request_history
@@ -79,7 +79,7 @@ def test_emit_webhooks_for_instance(setup_project_dialog, organization_webhook):
     project_title = 'Projects 1'
     project = Project.objects.create(title=project_title)
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         emit_webhooks_for_instance(
             webhook.organization, webhook.project, WebhookAction.PROJECT_CREATED, instance=project
         )
@@ -108,7 +108,7 @@ def test_webhooks_for_projects(configured_project, business_client, organization
     # create/update/delete project through API
     # PROJECT_CREATED
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.post(reverse('projects:api:project-list'))
 
     assert response.status_code == 201
@@ -120,7 +120,7 @@ def test_webhooks_for_projects(configured_project, business_client, organization
     project_id = response.json()['id']
     # PROJECT_UPDATED
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.patch(
             reverse('projects:api:project-detail', kwargs={'pk': project_id}),
             data=json.dumps({'title': 'Test title'}),
@@ -136,7 +136,7 @@ def test_webhooks_for_projects(configured_project, business_client, organization
 
     # PROJECT_DELETED
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.delete(
             reverse('projects:api:project-detail', kwargs={'pk': project_id}),
         )
@@ -155,7 +155,7 @@ def test_webhooks_for_tasks(configured_project, business_client, organization_we
     webhook = organization_webhook
     # CREATE
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.post(
             reverse('tasks:api:task-list'),
             data=json.dumps(
@@ -178,7 +178,7 @@ def test_webhooks_for_tasks(configured_project, business_client, organization_we
     task_id = response.json()['id']
     url = webhook.url
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', url)
+        m.register_uri('POST', url, status_code=201)
         response = business_client.delete(reverse('tasks:api:task-detail', kwargs={'pk': task_id}))
 
     assert response.status_code == 204
@@ -202,7 +202,7 @@ def test_webhooks_for_tasks_import(configured_project, business_client, organiza
     with open(IMPORT_CSV, 'rb') as file_:
         data = SimpleUploadedFile('test_5.csv', file_.read(), content_type='multipart/form-data')
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.post(
             f'/api/projects/{configured_project.id}/import',
             data={'csv_1': data},
@@ -227,7 +227,7 @@ def test_webhooks_for_annotation(configured_project, business_client, organizati
     task = configured_project.tasks.all().first()
     # CREATE
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.post(
             f'/api/tasks/{task.id}/annotations?project={configured_project.id}',
             data=json.dumps(
@@ -260,7 +260,7 @@ def test_webhooks_for_annotation(configured_project, business_client, organizati
 
     # UPDATE POST
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.put(
             f'/api/annotations/{annotation_id}?project={configured_project.id}&taskId={task.id}',
             data=json.dumps(
@@ -303,7 +303,7 @@ def test_webhooks_for_annotation(configured_project, business_client, organizati
 
     # DELETE
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.delete(
             f'/api/annotations/{annotation_id}',
             content_type='application/json',
@@ -332,7 +332,7 @@ def test_webhooks_for_action_delete_tasks_annotations(configured_project, busine
         assert response.status_code == 201
 
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.post(
             f'/api/dm/actions?id=delete_tasks_annotations&project={configured_project.id}',
             data=json.dumps(
@@ -356,7 +356,7 @@ def test_webhooks_for_action_delete_tasks_annotations(configured_project, busine
 def test_webhooks_for_action_delete_tasks(configured_project, business_client, organization_webhook):
     webhook = organization_webhook
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.post(
             f'/api/dm/actions?id=delete_tasks&project={configured_project.id}',
             data=json.dumps(
@@ -380,7 +380,7 @@ def test_webhooks_for_tasks_from_storages(configured_project, business_client, o
     webhook = organization_webhook
     # CREATE
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         add_url = '/api/storages/s3'
         payload = {
             'bucket': 'pytest-s3-images',
@@ -427,7 +427,7 @@ def test_start_training_webhook(setup_project_dialog, ml_start_training_webhook,
 
     # Mock the POST request to the ML backend train endpoint
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
         response = business_client.post(
             f'/api/ml/{ml.id}/train',
             data=json.dumps({'action': 'START_TRAINING'}),
@@ -460,7 +460,7 @@ def test_webhook_batching(configured_project, organization_webhook):
         tasks.append(task)
 
     with requests_mock.Mocker(real_http=True) as m:
-        m.register_uri('POST', webhook.url)
+        m.register_uri('POST', webhook.url, status_code=201)
 
         # Set batch size to 100 for testing
         original_batch_size = getattr(settings, 'WEBHOOK_BATCH_SIZE', 100)

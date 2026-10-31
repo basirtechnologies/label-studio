@@ -169,13 +169,20 @@ def _create_user(input_args, config):
         print('User {} already exists'.format(username))
 
     user = User.objects.get(email=username)
-    org = Organization.objects.first()
-    if not org:
+    # Basir: every user gets its own organization instead of joining the first one.
+    # Organization.created_by is one-to-one, and the app container runs `label-studio init` on every
+    # start, so reuse the organization this user already created instead of creating a second one.
+    org = Organization.objects.filter(created_by=user).first()
+    if org is None:
         org = Organization.create_organization(
-            created_by=user, title='Label Studio', legacy_api_tokens_enabled=input_args.enable_legacy_api_token
+            created_by=user,
+            title=f'Label Studio {user.email.split("@")[0]}',
+            legacy_api_tokens_enabled=input_args.enable_legacy_api_token,
         )
-    else:
-        org.add_user(user)
+    organization = Organization.objects.get(id=org.id)
+    first_organization = Organization.objects.first()
+    first_organization.remove_user(user)
+    organization.add_user(user)
     user.active_organization = org
     user.save(update_fields=['active_organization'])
 

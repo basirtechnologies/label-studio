@@ -4,19 +4,20 @@ import logging
 from urllib.parse import quote
 
 from core.feature_flags import flag_set
-from core.middleware import enforce_csrf_checks
 from core.utils.common import load_func
 from django.conf import settings
 from django.contrib import auth
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect, render, reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.csrf import csrf_exempt
 from organizations.forms import OrganizationSignupForm
 from organizations.models import Organization
 from rest_framework.authtoken.models import Token
 from users import forms
+from users.forms import normalize_user_email
 from users.functions import login, proceed_registration
+from users.models import User
 
 logger = logging.getLogger()
 
@@ -36,7 +37,8 @@ def logout(request):
     return redirect('/')
 
 
-@enforce_csrf_checks
+# Basir: no CSRF check, our backend service signs users up programmatically
+@csrf_exempt
 def user_signup(request):
     """Sign up page"""
     user = request.user
@@ -55,16 +57,10 @@ def user_signup(request):
 
     # make a new user
     if request.method == 'POST':
-        organization = Organization.objects.first()
-        token_is_valid = bool(
-            token and organization and token == organization.token and not organization.is_invite_token_expired
-        )
-        if settings.DISABLE_SIGNUP_WITHOUT_LINK is True:
-            if not token_is_valid:
-                raise PermissionDenied()
-        else:
-            if token and organization and not token_is_valid:
-                raise PermissionDenied()
+        # Basir: the user joins the organization of the invite token. The upstream
+        # DISABLE_SIGNUP_WITHOUT_LINK / token mismatch / expiry checks are intentionally not applied;
+        # a missing or unknown token fails here with Organization.DoesNotExist.
+        organization = Organization.objects.get(token=token)
 
         user_form = forms.UserSignupForm(request.POST)
         organization_form = OrganizationSignupForm(request.POST)
@@ -72,6 +68,14 @@ def user_signup(request):
         if user_form.is_valid():
             redirect_response = proceed_registration(request, user_form, organization_form, next_page)
             if redirect_response:
+                # Basir: move the new user from the default (first) organization to the token's organization.
+                # The signup form stores the email normalized (stripped, lowercased), so look it up the same way.
+                user = User.objects.get(email=normalize_user_email(request.POST.get('email')))
+                first_organization = Organization.objects.first()
+                first_organization.remove_user(user)
+                organization.add_user(user)
+                user.active_organization = organization
+                user.save(update_fields=['active_organization'])
                 return redirect_response
 
     if flag_set('fflag_feat_front_lsdv_e_297_increase_oss_to_enterprise_adoption_short'):
@@ -100,7 +104,8 @@ def user_signup(request):
     )
 
 
-@enforce_csrf_checks
+# Basir: no CSRF check, our backend service logs in programmatically
+@csrf_exempt
 def user_login(request):
     """Login page"""
     user = request.user

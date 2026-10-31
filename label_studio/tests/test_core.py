@@ -81,6 +81,8 @@ def test_user_info(business_client):
         username = 'tester@x.com'
         password = 'passwdx'
         user_token = 'token12345'
+        # read by _create_user, which now always creates the user's own organization
+        enable_legacy_api_token = False
 
     args = DummyArgs()
     _create_user(args, {})
