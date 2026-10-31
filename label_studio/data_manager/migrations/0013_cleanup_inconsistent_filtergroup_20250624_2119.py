@@ -3,9 +3,7 @@ import logging
 
 from django.db import migrations
 from django.db.models import Count
-from core.redis import start_job_async_or_sync
-from core.models import AsyncMigrationStatus
-from data_manager.models import FilterGroup, Filter
+from core.redis import redis_connected, start_job_async_or_sync
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +11,26 @@ logger = logging.getLogger(__name__)
 migration_name = '0013_cleanup_inconsistent_filtergroup_20250624_2119'
 
 
-def cleanup_inconsistent_filtergroup():
+def cleanup_inconsistent_filtergroup(apps=None):
     """
     Grabs filter groups related to more than one view.
     Creates a new filter group and filters for each view based on the filter group, so filter groups aren't shared.
-    """
 
-    migration, created = AsyncMigrationStatus.objects.get_or_create(name=migration_name, defaults={'status': AsyncMigrationStatus.STATUS_STARTED})
+    ``apps`` is the migration's historical app registry when this runs synchronously inside `migrate`.
+    The current models must not be used then: on a database being upgraded, later columns such as
+    Filter.parent (0013_filter_parent_alter_filter_index) and View.is_locked (0019_view_lock_fields)
+    don't exist yet. An RQ worker (``apps`` is None) runs after deploy and uses the current models.
+    """
+    if apps is None:
+        from core.models import AsyncMigrationStatus
+        from data_manager.models import Filter, FilterGroup
+    else:
+        AsyncMigrationStatus = apps.get_model('core', 'AsyncMigrationStatus')
+        Filter = apps.get_model('data_manager', 'Filter')
+        FilterGroup = apps.get_model('data_manager', 'FilterGroup')
+
+    # literal statuses: historical models don't carry the STATUS_* class constants
+    migration, created = AsyncMigrationStatus.objects.get_or_create(name=migration_name, defaults={'status': 'STARTED'})
     if not created:
         return # migration already done or in progress
     
@@ -54,11 +65,15 @@ def cleanup_inconsistent_filtergroup():
             
             logger.info(f'Created new filter group {new_filter_group.id} for view {view.id} for project {view.project_id}')
 
-    migration.status = AsyncMigrationStatus.STATUS_FINISHED
+    migration.status = 'FINISHED'
     migration.save(update_fields=['status'])
 
 def forward(apps, schema_editor):
-    start_job_async_or_sync(cleanup_inconsistent_filtergroup, queue_name='low', job_timeout=60 * 60 * 24) # 24 hours
+    if redis_connected():
+        start_job_async_or_sync(cleanup_inconsistent_filtergroup, queue_name='low', job_timeout=60 * 60 * 24) # 24 hours
+    else:
+        # Same condition start_job_async_or_sync uses to run inline; use the historical models here
+        cleanup_inconsistent_filtergroup(apps=apps)
 
 def backward(apps, schema_editor):
     AsyncMigrationStatus = apps.get_model('core', 'AsyncMigrationStatus')
