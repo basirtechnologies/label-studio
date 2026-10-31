@@ -1,0 +1,3 @@
+# The nginx image copies nothing from its build context (deploy/nginx).
+# Keep local TLS certs/keys in certs/ out of the context entirely.
+**
