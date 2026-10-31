@@ -5,8 +5,16 @@ marks:
       - django_live_url
       - configured_project
 stages:
-  - id: signup
-    type: ref
+  # Basir legacy patch: an organization already exists (configured_project), so signup needs its invite token
+  - name: Sign up into the project's organization
+    request:
+      url: "{django_live_url}/user/signup?token={configured_project.organization.token}"
+      data:
+        email: test_suites_user@heartex.com
+        password: 12345678
+      method: POST
+    response:
+      status_code: 302
   - name: Get webhook info
     request:
       url: "{django_live_url}/api/webhooks/info/"

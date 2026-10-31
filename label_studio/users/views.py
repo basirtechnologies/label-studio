@@ -60,7 +60,12 @@ def user_signup(request):
         # Basir: the user joins the organization of the invite token. The upstream
         # DISABLE_SIGNUP_WITHOUT_LINK / token mismatch / expiry checks are intentionally not applied;
         # a missing or unknown token fails here with Organization.DoesNotExist.
-        organization = Organization.objects.get(token=token)
+        # Exception: on a fresh install (no organization yet) the first user may sign up without a token;
+        # save_user then creates the first organization for them, as upstream does.
+        if not token and not Organization.objects.exists():
+            organization = None
+        else:
+            organization = Organization.objects.get(token=token)
 
         user_form = forms.UserSignupForm(request.POST)
         organization_form = OrganizationSignupForm(request.POST)
@@ -68,14 +73,15 @@ def user_signup(request):
         if user_form.is_valid():
             redirect_response = proceed_registration(request, user_form, organization_form, next_page)
             if redirect_response:
-                # Basir: move the new user from the default (first) organization to the token's organization.
-                # The signup form stores the email normalized (stripped, lowercased), so look it up the same way.
-                user = User.objects.get(email=normalize_user_email(request.POST.get('email')))
-                first_organization = Organization.objects.first()
-                first_organization.remove_user(user)
-                organization.add_user(user)
-                user.active_organization = organization
-                user.save(update_fields=['active_organization'])
+                if organization is not None:
+                    # Basir: move the new user from the default (first) organization to the token's organization.
+                    # The signup form stores the email normalized (stripped, lowercased), so look it up the same way.
+                    user = User.objects.get(email=normalize_user_email(request.POST.get('email')))
+                    first_organization = Organization.objects.first()
+                    first_organization.remove_user(user)
+                    organization.add_user(user)
+                    user.active_organization = organization
+                    user.save(update_fields=['active_organization'])
                 return redirect_response
 
     if flag_set('fflag_feat_front_lsdv_e_297_increase_oss_to_enterprise_adoption_short'):

@@ -147,6 +147,36 @@ def test_signup_without_valid_token_fails_on_lookup(business_client, client, que
 
 
 @pytest.mark.django_db
+def test_first_signup_on_fresh_install_needs_no_token(client):
+    # Deviation agreed for the port: with no organization at all, the first user may sign up without a token
+    # and gets the first organization (upstream's save_user creates it).
+    assert not Organization.objects.exists()
+
+    response = client.post('/user/signup/', data={'email': 'first@example.com', 'password': 'test_password'})
+
+    assert response.status_code == 302
+    user = User.objects.get(email='first@example.com')
+    assert Organization.objects.count() == 1
+    org = Organization.objects.get()
+    assert org.created_by_id == user.id
+    assert user.active_organization_id == org.id
+    assert org.has_user(user)
+
+    # Once an organization exists, the legacy rule applies again: no token, no signup.
+    client.logout()
+    with pytest.raises(Organization.DoesNotExist):
+        client.post('/user/signup/', data={'email': 'second@example.com', 'password': 'test_password'})
+    assert not User.objects.filter(email='second@example.com').exists()
+
+
+@pytest.mark.django_db
+def test_fresh_install_signup_with_unknown_token_still_fails(client):
+    with pytest.raises(Organization.DoesNotExist):
+        client.post('/user/signup/?token=nope', data={'email': 'first@example.com', 'password': 'test_password'})
+    assert not Organization.objects.exists()
+
+
+@pytest.mark.django_db
 def test_signup_and_login_do_not_check_csrf(business_client):
     team_b = _second_org()
     # enforce_csrf_checks=1 makes core.middleware.DisableCSRF turn CSRF on for views without their own setting.
@@ -254,3 +284,76 @@ def test_rejected_webhook_fails_annotation_submit(configured_project, business_c
     assert any(r.url == webhook.url for r in m.request_history)
     # The webhook runs after the annotation is saved, so the annotation still exists (same as the legacy fork).
     assert task.annotations.count() == annotations_before + 1
+
+
+# ---------------------------------------------------------------- deployment: internal webhook host
+
+BASIR_WEBHOOK_URL = 'http://apis.basir:5050/webhook'
+
+
+@pytest.fixture
+def apis_basir_resolves_to_docker_ip(monkeypatch):
+    # In our stack apis.basir is a Docker-network hostname with a private address.
+    import socket
+
+    real = socket.gethostbyname
+    monkeypatch.setattr(socket, 'gethostbyname', lambda host: '172.18.0.5' if host == 'apis.basir' else real(host))
+
+
+@pytest.mark.django_db
+def test_internal_webhook_blocked_while_ssrf_protection_on(
+    configured_project, business_client, settings, apis_basir_resolves_to_docker_ip
+):
+    settings.SSRF_PROTECTION_ENABLED = True
+
+    response = business_client.post(
+        '/api/webhooks/',
+        data=json.dumps({'url': BASIR_WEBHOOK_URL, 'project': configured_project.id}),
+        content_type='application/json',
+    )
+    # SsrfBlockedUrlError is answered with 403
+    assert response.status_code == 403, response.content
+    assert not Webhook.objects.filter(url=BASIR_WEBHOOK_URL).exists()
+
+    webhook = Webhook.objects.create(organization=configured_project.organization, url=BASIR_WEBHOOK_URL)
+    with requests_mock.Mocker() as m:
+        m.post(BASIR_WEBHOOK_URL, status_code=400, json={'message': 'rejected'})
+        # blocked before sending: logged and swallowed, so nothing is raised and nothing is sent
+        assert run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED) is None
+    assert m.call_count == 0
+
+
+@pytest.mark.django_db
+def test_internal_webhook_works_with_ssrf_protection_off(
+    configured_project, business_client, settings, apis_basir_resolves_to_docker_ip
+):
+    settings.SSRF_PROTECTION_ENABLED = False
+
+    response = business_client.post(
+        '/api/webhooks/',
+        data=json.dumps({'url': BASIR_WEBHOOK_URL, 'project': configured_project.id}),
+        content_type='application/json',
+    )
+    assert response.status_code == 201, response.content
+    webhook = Webhook.objects.get(id=response.json()['id'])
+
+    with requests_mock.Mocker() as m:
+        m.post(BASIR_WEBHOOK_URL, status_code=201, json={})
+        assert run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED).status_code == 201
+        m.post(BASIR_WEBHOOK_URL, status_code=400, json={'message': 'rejected'})
+        with pytest.raises(Exception, match='rejected'):
+            run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED)
+    assert m.call_count == 2
+
+
+@pytest.mark.django_db
+def test_auto_disable_off_with_zero_threshold(webhook, settings):
+    settings.WEBHOOK_MAX_CONSECUTIVE_FAILURES = 0
+    with requests_mock.Mocker() as m:
+        m.post(webhook.url, status_code=400, json={'message': 'rejected'})
+        for _ in range(60):
+            with pytest.raises(Exception, match='rejected'):
+                run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED)
+    webhook.refresh_from_db()
+    assert webhook.is_active is True
+    assert not webhook.consecutive_failures
