@@ -354,7 +354,7 @@ describe("loadAndApplyProjectHotkeys", () => {
   });
 });
 
-// DW-891: eraser default E -> X, brush default B -> no key
+// DW-891: eraser default E -> X -> shift+E, brush default B -> no key
 describe("useHotkeys changed tool defaults (DW-891)", () => {
   afterEach(() => {
     effectiveHotkeys.resetForTests();
@@ -372,11 +372,19 @@ describe("useHotkeys changed tool defaults (DW-891)", () => {
     const callApi = mock(async () => apiResponse(saved));
     const { result } = renderHook(() => useHotkeys(), { wrapper: createApiWrapper(callApi) });
 
-    await waitFor(() => expect(toolKey(result.current.hotkeys, "tool:eraser")).toBe("X"));
+    await waitFor(() => expect(toolKey(result.current.hotkeys, "tool:eraser")).toBe("shift+E"));
     expect(toolKey(result.current.hotkeys, "tool:brush")).toBe("");
     expect(toolKey(result.current.hotkeys, "tool:rect")).toBe("R");
     expect(effectiveHotkeys.get("tools:tool:eraser")).toBeNull();
     expect(effectiveHotkeys.get("tools:tool:brush")).toBeNull();
+  });
+
+  it("users whose saved settings hold X (the first DW-891 default) get shift+E", async () => {
+    const callApi = mock(async () => apiResponse({ "tools:tool:eraser": { key: "X", active: true } }));
+    const { result } = renderHook(() => useHotkeys(), { wrapper: createApiWrapper(callApi) });
+
+    await waitFor(() => expect(toolKey(result.current.hotkeys, "tool:eraser")).toBe("shift+E"));
+    expect(effectiveHotkeys.get("tools:tool:eraser")).toBeNull();
   });
 
   it("keeps keys the user chose themselves", async () => {
@@ -407,7 +415,7 @@ describe("useHotkeys changed tool defaults (DW-891)", () => {
     expect(name).toBe("updateHotkeys");
     const sent = options.body?.custom_hotkeys ?? {};
     expect(sent["tools:tool:brush"]).toBeUndefined();
-    expect(sent["tools:tool:eraser"]).toEqual(expect.objectContaining({ key: "X", active: true }));
+    expect(sent["tools:tool:eraser"]).toEqual(expect.objectContaining({ key: "shift+E", active: true }));
     expect(Object.values(sent).every((h) => typeof h.key === "string" && h.key.length > 0)).toBe(true);
   });
 });

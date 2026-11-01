@@ -263,7 +263,7 @@
   },
 
   "tool:eraser": {
-    "key": "X",
+    "key": "shift+E",
     "description": "Select the eraser tool"
   },
 
