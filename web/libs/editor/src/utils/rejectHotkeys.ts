@@ -2,7 +2,8 @@ import { Hotkey } from "../core/Hotkey";
 import defaultKeymap from "../core/settings/keymap.json";
 import { isMacOS } from "./utilities";
 
-type Keymap = Record<string, { key?: string; mac?: string } | undefined>;
+// key is null for a hotkey without a default key (e.g. tool:brush)
+type Keymap = Record<string, { key?: string | null; mac?: string | null } | undefined>;
 
 /** The chord a keymap binds to `name` on this platform, if any. */
 const chordIn = (keymap: Keymap | undefined, name: string, isMac: boolean): string => {

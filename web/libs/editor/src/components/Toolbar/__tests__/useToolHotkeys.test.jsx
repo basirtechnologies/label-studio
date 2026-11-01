@@ -1,48 +1,66 @@
 /**
  * DW-891: label hotkeys win over tool hotkeys.
  *
- * Real Hotkey namespaces and the hooks the toolbar Tool registers its hotkeys with. The labeling config's hotkeys are registered the
- * way Annotation#setupHotKeys does it: Hotkey(Hotkey.CONFIG_NAMESPACE).addKey(label.hotkey, label.onHotKey).
- * A key press is simulated by calling the handlers bound to that key in the config and toolbar
- * namespaces (keymaster calls every handler bound to a key).
+ * The hooks the toolbar Tool registers its hotkeys with, driven with the real keymap and the real list of
+ * config hotkeys (core/configHotkeys, which Hotkey.ts fills from Annotation#setupHotKeys - see
+ * core/Hotkey.configKeys.test.ts). The toolbar namespace is a small in-memory stand-in: core/Hotkey is
+ * module-mocked by other test files in the same run.
+ *
+ * A key press is simulated the way keymaster dispatches it: every handler bound to the key is called,
+ * the config's (selects the label) and the toolbar's (selects the tool).
  */
 import { act, render } from "@testing-library/react";
-import { getConfigHotkeys } from "@humansignal/core/lib/utils/configHotkeys";
-import { Hotkey } from "../../../core/Hotkey";
+import { setConfigHotkeys } from "@humansignal/core/lib/utils/configHotkeys";
 import defaultKeymap from "../../../core/settings/keymap.json";
-import { toolbarHotkeys, useToolExtraShortcuts, useToolShortcut } from "../useToolHotkeys";
+import { useToolExtraShortcuts, useToolShortcut } from "../useToolHotkeys";
 
-const configHotkeys = Hotkey(Hotkey.CONFIG_NAMESPACE, "Annotations");
-const toolbarKeys = () => Object.fromEntries(toolbarHotkeys.getKeys().map((key) => [key, toolbarHandler(key)]));
-const toolbarHandler = (key) => Hotkey.namespaces().SegmentationToolbar.keys[key];
+/** in-memory toolbar namespace with the subset of the Hotkey API the hooks use */
+const createToolbarHotkeys = (keymap) => {
+  const bound = {};
+  const keyOf = (name) => keymap[name]?.key ?? null;
+  const bind = (name, fn) => {
+    const key = keyOf(name);
+    if (key) bound[key.toLowerCase()] = fn;
+  };
+
+  return {
+    bound,
+    lookupKey: keyOf,
+    hasKeyByName: (name) => Boolean(keyOf(name) && bound[keyOf(name).toLowerCase()]),
+    addNamed: bind,
+    overwriteNamed: bind,
+    removeNamed: (name) => {
+      const key = keyOf(name);
+      if (key) delete bound[key.toLowerCase()];
+    },
+  };
+};
 
 const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 
+let keymap;
+let toolbar;
+let labels; // the config's label hotkeys: key -> label value
 let selectedLabels;
 let toolClicks;
 
-// handlers of the config's hotkeys, by key, so press() can call them
-const configHandlers = {};
-
-/** <Label value hotkey/> of the config: pressing its key selects it */
-const addConfigLabel = (value, hotkey) => {
-  const select = () => selectedLabels.push(value);
-  configHandlers[configHotkeys.applyAliases(hotkey.toLowerCase())] = select;
-  configHotkeys.addKey(hotkey, select);
+/** load a labeling config whose labels use these hotkeys, e.g. { e: "brass_knuckles" } */
+const loadConfig = async (labelKeys) => {
+  labels = labelKeys;
+  await act(async () => setConfigHotkeys(Object.keys(labelKeys)));
 };
 
-/** keymaster calls every handler bound to the key: the config's (label) and the toolbar's (tool) */
 const press = (key) => {
-  if (configHotkeys.hasKey(key)) configHandlers[key]?.();
-  toolbarKeys()[key]?.();
+  if (labels[key]) selectedLabels.push(labels[key]);
+  toolbar.bound[key]?.();
 };
 
 const NO_EXTRA = {};
 
 /** what Tool.jsx does with its hotkeys; shows the key Tool would show */
-const ToolHarness = ({ name, active = false, extraShortcuts = NO_EXTRA, onClick }) => {
-  const { shortcutKey } = useToolShortcut({ shortcut: name, onClick: onClick ?? (() => toolClicks.push(name)) });
-  useToolExtraShortcuts(extraShortcuts, active);
+const ToolHarness = ({ name, active = false, extraShortcuts = NO_EXTRA }) => {
+  const { shortcutKey } = useToolShortcut({ shortcut: name, onClick: () => toolClicks.push(name), hotkeys: toolbar });
+  useToolExtraShortcuts(extraShortcuts, active, toolbar);
   return <span data-testid={name}>{shortcutKey ?? ""}</span>;
 };
 
@@ -59,16 +77,15 @@ const shownKey = (container, name) => container.querySelector(`[data-testid="${n
 
 describe("DW-891: label hotkeys win over tool hotkeys", () => {
   beforeEach(() => {
+    keymap = structuredClone(defaultKeymap);
+    toolbar = createToolbarHotkeys(keymap);
+    labels = {};
     selectedLabels = [];
     toolClicks = [];
-    Hotkey.keymap = { ...defaultKeymap };
   });
 
   afterEach(async () => {
-    configHotkeys.unbindAll();
-    for (const key of Object.keys(configHandlers)) delete configHandlers[key];
-    Hotkey.keymap = { ...defaultKeymap };
-    await flush();
+    await act(async () => setConfigHotkeys([]));
   });
 
   it("defaults: the eraser is on X and the brush has no key", () => {
@@ -87,13 +104,12 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
     const { container, unmount } = renderTools(["tool:brush"]);
     await flush();
     expect(shownKey(container, "tool:brush")).toBe("");
-    expect(Object.keys(toolbarKeys())).toEqual([]);
+    expect(toolbar.bound).toEqual({});
     unmount();
   });
 
   it("BrushLabels on e and b: e and b select the labels, no tool changes; x selects the eraser", async () => {
-    addConfigLabel("brass_knuckles", "e");
-    addConfigLabel("metal_gun", "b");
+    await loadConfig({ e: "brass_knuckles", b: "metal_gun" });
     const { container, unmount } = renderTools(["tool:brush", "tool:eraser"]);
     await flush();
 
@@ -109,11 +125,11 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
   });
 
   it("RectangleLabels on r: r selects the label, not the rectangle tool", async () => {
-    addConfigLabel("car", "r");
+    await loadConfig({ r: "car" });
     const { container, unmount } = renderTools(["tool:rect"]);
     await flush();
 
-    expect(toolbarKeys().r).toBeUndefined();
+    expect(toolbar.bound.r).toBeUndefined();
     press("r");
     expect(selectedLabels).toEqual(["car"]);
     expect(toolClicks).toEqual([]);
@@ -123,7 +139,7 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
   });
 
   it("a config without r: r selects the rectangle tool", async () => {
-    addConfigLabel("person", "1");
+    await loadConfig({ 1: "person" });
     const { container, unmount } = renderTools(["tool:rect"]);
     await flush();
 
@@ -135,21 +151,20 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
   });
 
   it("matching is case-insensitive and respects modifiers", async () => {
-    addConfigLabel("upper", "R"); // same key as the tool's "R"
-    addConfigLabel("shifted", "shift+o"); // the ellipse tool is plain "O": no clash
+    await loadConfig({ R: "upper", "shift+o": "shifted" }); // R = the tool's "R"; the ellipse tool is plain "O"
     const { unmount } = renderTools(["tool:rect", "tool:ellipse"]);
     await flush();
 
-    expect(toolbarKeys().r).toBeUndefined();
+    expect(toolbar.bound.r).toBeUndefined();
     press("o");
     expect(toolClicks).toEqual(["tool:ellipse"]);
     unmount();
   });
 
   it("a customised tool key that clashes with a config key: the config wins", async () => {
-    // e.g. Account Settings -> Hotkeys: eraser on Q, and the config has <Label hotkey="q"/>
-    Hotkey.setKeymap({ "tool:eraser": { ...defaultKeymap["tool:eraser"], key: "q" } });
-    addConfigLabel("bat", "q");
+    // Account Settings -> Hotkeys: eraser on Q, and the config has <Label hotkey="q"/>
+    keymap["tool:eraser"] = { ...keymap["tool:eraser"], key: "q" };
+    await loadConfig({ q: "bat" });
     const { container, unmount } = renderTools(["tool:eraser"]);
     await flush();
 
@@ -161,32 +176,34 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
   });
 
   it("a user-bound brush key works when the config does not use it", async () => {
-    Hotkey.setKeymap({ "tool:brush": { ...defaultKeymap["tool:brush"], key: "j" } });
-    const { unmount } = renderTools(["tool:brush"]);
+    keymap["tool:brush"] = { ...keymap["tool:brush"], key: "j" };
+    await loadConfig({ e: "brass_knuckles" });
+    const { container, unmount } = renderTools(["tool:brush"]);
     await flush();
 
     press("j");
     expect(toolClicks).toEqual(["tool:brush"]);
+    expect(shownKey(container, "tool:brush")).toBe("j");
     unmount();
   });
 
   it("the config also wins when it takes the key after the tool was bound", async () => {
     const { container, unmount } = renderTools(["tool:rect"]);
     await flush();
-    const boundRect = toolbarKeys().r;
+    const boundRect = toolbar.bound.r;
     expect(boundRect).toBeDefined();
 
-    addConfigLabel("car", "r"); // e.g. labels added later (dynamic labels)
-    // ignored at once, even before the toolbar re-renders
+    // e.g. labels added later (dynamic labels): the handler bound before ignores the key at once
+    setConfigHotkeys(["r"]);
     boundRect();
     expect(toolClicks).toEqual([]);
 
     await flush();
-    expect(toolbarKeys().r).toBeUndefined();
+    expect(toolbar.bound.r).toBeUndefined();
     expect(shownKey(container, "tool:rect")).toBe("");
 
     // and the tool gets its key back when the config no longer uses it
-    configHotkeys.unbindAll();
+    await loadConfig({});
     await flush();
     press("r");
     expect(toolClicks).toEqual(["tool:rect"]);
@@ -200,24 +217,16 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
       "tool:decrease-tool": ["Decrease size", decrease],
       "tool:increase-tool": ["Increase size", increase],
     };
-    addConfigLabel("bracket", "]");
-    const { unmount } = render(<ToolHarness active name="tool:brush" extraShortcuts={extra} onClick={() => {}} />);
+    await loadConfig({ "]": "bracket" });
+    const { unmount } = render(<ToolHarness active name="tool:brush" extraShortcuts={extra} />);
     await flush();
 
-    toolbarKeys()["["]?.();
+    press("[");
     expect(decrease).toHaveBeenCalledTimes(1);
-    expect(toolbarKeys()["]"]).toBeUndefined();
+    expect(toolbar.bound["]"]).toBeUndefined();
+    press("]");
+    expect(increase).not.toHaveBeenCalled();
+    expect(selectedLabels).toEqual(["bracket"]);
     unmount();
-  });
-
-  it("publishes the config's keys for the keyboard help", async () => {
-    addConfigLabel("brass_knuckles", "e");
-    addConfigLabel("filter", "shift+f");
-    expect(getConfigHotkeys().sort()).toEqual(["e", "shift+f"]);
-    expect(Hotkey.isConfigKey("E")).toBe(true);
-    expect(Hotkey.isConfigKey("Shift+F")).toBe(true);
-    expect(Hotkey.isConfigKey("f")).toBe(false);
-    configHotkeys.unbindAll();
-    expect(getConfigHotkeys()).toEqual([]);
   });
 });
