@@ -209,13 +209,44 @@ describe("Brush tool", () => {
   });
 
   describe("BrushCursorMixin", () => {
-    it("cursorStyleRule calls Canvas.createBrushSizeCircleCursor with strokeWidth scaled by scaleX and stageScale", () => {
-      obj.scaleX = 2;
+    it("cursorStyleRule calls Canvas.createBrushSizeCircleCursor with strokeWidth scaled by stageScale", () => {
       obj.stageScale = 1.5;
       const tool = createBrush();
       tool.setStroke(10);
-      expect(tool.cursorStyleRule).toBe("url('cursor-30') auto");
-      expect(mockCreateBrushSizeCircleCursor).toHaveBeenCalledWith(30);
+      expect(tool.cursorStyleRule).toBe("url('cursor-15') auto");
+      expect(mockCreateBrushSizeCircleCursor).toHaveBeenCalledWith(15);
+    });
+
+    // DW-886: BrushRegion paints with lineWidth = strokeWidth * region.scaleX (always 1) * stageScale
+    it.each([
+      [15, 1],
+      [15, 2.197],
+      [15, 4.827],
+      [50, 0.5],
+      [1, 13.786],
+    ])("cursor diameter equals the painted stroke width (strokeWidth %p, zoom %p)", (strokeWidth, zoom) => {
+      obj.stageScale = zoom;
+      obj.scaleX = 3; // not used by BrushRegion when painting, so it must not change the cursor
+      const tool = createBrush();
+      tool.setStroke(strokeWidth);
+      const paintedLineWidth = strokeWidth * 1 * zoom;
+      expect(tool.cursorDiameter).toBeCloseTo(paintedLineWidth, 6);
+    });
+
+    it("uses a CSS circle cursor while it fits the 128px browser limit", () => {
+      obj.stageScale = 8; // 15 * 8 = 120px + 8px padding = 128
+      const tool = createBrush();
+      expect(tool.usesCanvasCursor).toBe(false);
+      expect(tool.cursorStyleRule).toBe("url('cursor-120') auto");
+    });
+
+    it("switches to the canvas-drawn circle (crosshair CSS cursor) above the browser limit", () => {
+      obj.stageScale = 8.1; // 121.5px circle no longer fits a 128px cursor image
+      const tool = createBrush();
+      mockCreateBrushSizeCircleCursor.mockClear();
+      expect(tool.usesCanvasCursor).toBe(true);
+      expect(tool.cursorStyleRule).toBe("crosshair");
+      expect(mockCreateBrushSizeCircleCursor).not.toHaveBeenCalled();
     });
 
     it("cursorStyleRule defaults scaleX and stageScale to 1 when obj is missing", () => {

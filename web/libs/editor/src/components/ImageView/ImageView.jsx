@@ -1411,6 +1411,54 @@ const CursorLayer = observer(({ item, tool }) => {
   ) : null;
 });
 
+/**
+ * Brush/eraser size circle drawn on the canvas. Used when the circle is too big for a CSS cursor
+ * image (browsers ignore cursor images above 128px). The circle lives in stage coordinates, so its
+ * diameter on screen is strokeWidth * zoom, exactly what the brush paints.
+ */
+const BrushCursorLayer = observer(({ item, tool }) => {
+  const layerRef = useRef();
+  const outerRef = useRef();
+  const innerRef = useRef();
+  const radius = tool.strokeWidth / 2;
+
+  useEffect(() => {
+    const stage = item.stageRef;
+    if (!stage) return;
+    const move = () => {
+      const layer = layerRef.current;
+      const pointer = stage.getPointerPosition();
+      if (!layer || !pointer) return;
+      // stage scale, position, offset and rotation all inverted at once
+      const { x, y } = stage.getAbsoluteTransform().copy().invert().point(pointer);
+      outerRef.current?.position({ x, y });
+      innerRef.current?.position({ x, y });
+      layer.visible(true);
+      layer.batchDraw();
+    };
+    const hide = () => {
+      layerRef.current?.visible(false);
+      layerRef.current?.batchDraw();
+    };
+
+    stage.on("mousemove.brushcursor mouseenter.brushcursor", move);
+    stage.on("mouseleave.brushcursor", hide);
+    // visibility is managed here, not as a prop, so re-renders (e.g. size changes) don't hide it
+    if (stage.content?.matches?.(":hover")) move();
+    else hide();
+    return () => {
+      stage.off(".brushcursor");
+    };
+  }, [item.stageRef]);
+
+  return (
+    <Layer ref={layerRef} name="brush-cursor" listening={false}>
+      <Circle ref={outerRef} radius={radius} stroke="black" strokeWidth={3} strokeScaleEnabled={false} />
+      <Circle ref={innerRef} radius={radius} stroke="white" strokeWidth={1} strokeScaleEnabled={false} />
+    </Layer>
+  );
+});
+
 const StageContent = observer(({ item, store, state, crosshairRef }) => {
   if (!isAlive(item)) return null;
   if (!store.task || !item.currentSrc) return null;
@@ -1471,6 +1519,7 @@ const StageContent = observer(({ item, store, state, crosshairRef }) => {
       {item.crosshair && <Crosshair ref={crosshairRef} width={item.containerWidth} height={item.containerHeight} />}
 
       {tool && tool.toolName?.match(/bitmask/i) && <CursorLayer item={item} tool={tool} />}
+      {tool?.usesCanvasCursor && <BrushCursorLayer item={item} tool={tool} />}
     </>
   );
 });

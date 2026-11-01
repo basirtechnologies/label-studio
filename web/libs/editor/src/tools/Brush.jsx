@@ -231,11 +231,24 @@ const _Tool = types
 const BrushCursorMixin = types
   .model("BrushCursorMixin")
   .views((self) => ({
-    get cursorStyleRule() {
-      const scaleX = self.obj?.scaleX || 1;
+    /**
+     * Diameter of the brush/eraser in CSS px on screen. It must match how BrushRegion paints:
+     * strokeWidth is in stage px and the stage layer is scaled by stageScale (zoom).
+     */
+    get cursorDiameter() {
       const stageScale = self.obj?.stageScale || 1;
-      const val = self.strokeWidth * scaleX * stageScale;
-      return Canvas.createBrushSizeCircleCursor(val);
+      return self.strokeWidth * stageScale;
+    },
+    /**
+     * Browsers drop CSS cursor images above 128px and show the default arrow instead, so big
+     * circles (large brush or high zoom) are drawn on the canvas by ImageView's BrushCursorLayer.
+     */
+    get usesCanvasCursor() {
+      return !Canvas.brushCursorFitsCss(self.cursorDiameter);
+    },
+    get cursorStyleRule() {
+      if (self.usesCanvasCursor) return "crosshair";
+      return Canvas.createBrushSizeCircleCursor(self.cursorDiameter);
     },
   }))
   .actions((self) => ({

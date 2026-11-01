@@ -65,6 +65,39 @@ describe("createBrushSizeCircleCursor", () => {
     expect(result).toContain(",");
     expect(result).toContain("auto");
   });
+
+  // DW-886: the canvas must not truncate a fractional diameter, and the hotspot is the circle center
+  test.each([
+    [15, 23, 11],
+    [32.95, 41, 20],
+    [120, 128, 64],
+  ])("diameter %p gives a %p px image with hotspot %p", (diameter, imageSize, hotspot) => {
+    const created = [];
+    const realCreate = document.createElement.bind(document);
+    const spy = spyOn(document, "createElement").mockImplementation((tag) => {
+      const el = realCreate(tag);
+      if (tag === "canvas") created.push(el);
+      return el;
+    });
+    try {
+      const result = Canvas.createBrushSizeCircleCursor(diameter);
+      expect(created[0].width).toBe(imageSize);
+      expect(created[0].height).toBe(imageSize);
+      expect(result.endsWith(`') ${hotspot} ${hotspot}, auto`)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("brushCursorFitsCss", () => {
+  test("fits up to the 128px browser cursor limit, padding included", () => {
+    expect(Canvas.MAX_CSS_CURSOR_SIZE).toBe(128);
+    expect(Canvas.brushCursorFitsCss(15)).toBe(true);
+    expect(Canvas.brushCursorFitsCss(120)).toBe(true);
+    expect(Canvas.brushCursorFitsCss(120.2)).toBe(false);
+    expect(Canvas.brushCursorFitsCss(500)).toBe(false);
+  });
 });
 
 describe("trim", () => {
