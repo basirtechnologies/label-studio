@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Mapping, Optional
 
+from access_control.access import check_project_access
 from core.redis import start_job_async_or_sync
 from django.db.models import QuerySet
 from django.utils.functional import cached_property
@@ -86,6 +87,8 @@ class ProjectMixin:
         # LSO always runs a single organization, so cross-org access does not exist by design;
         # the only membership this has to reject is one that was revoked.
         user.project = self  # link for activity log
+        # Basir DW-907: a project outside the user's access groups answers 404 (raises Http404)
+        check_project_access(user, self)
         return not (self.organization_id and self.organization.has_deleted(user))
 
     def _can_use_overlap(self):

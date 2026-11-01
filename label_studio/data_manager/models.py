@@ -1,5 +1,6 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license."""
 
+from access_control.access import check_project_access
 from data_manager.prepare_params import PrepareParams
 from django.conf import settings
 from django.db import models
@@ -75,6 +76,8 @@ class ProjectViewMixin(models.Model):
     def has_permission(self, user):
         user.project = self.project  # link for activity log
         if self.project.organization == user.active_organization:
+            # Basir DW-907: tabs of a project outside the user's access groups answer 404
+            check_project_access(user, self.project)
             return True
         return False
 
