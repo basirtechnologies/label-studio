@@ -232,19 +232,18 @@ function exportRLE(region) {
       };
 
       ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(...relativeToAbsolutePoint(points[0], points[1]));
-
-      for (let i = 0; i < points.length / 2; i++) {
-        ctx.lineTo(...relativeToAbsolutePoint(points[2 * i], points[2 * i + 1]));
-      }
-
       ctx.strokeStyle = "#000";
       ctx.lineWidth = (touch.relativeStrokeWidth / 100) * naturalWidth;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.globalCompositeOperation = touch.compositeOperation;
-      ctx.stroke();
+      const absolutePoints = [];
+      for (let i = 0; i < points.length; i += 2) {
+        absolutePoints.push(...relativeToAbsolutePoint(points[i], points[i + 1]));
+      }
+      // a single click (no movement) is painted as a dot instead of being dropped
+      strokeBrushPath(ctx, absolutePoints);
+      ctx.restore();
     });
   }
 
@@ -280,6 +279,42 @@ function Region2RLE(region) {
  * @return {string} A CSS-compatible string for setting the custom cursor,
  * including a data URL with the cursor image and its hotspot coordinates.
  */
+/**
+ * Whether a flat [x0, y0, x1, y1, ...] brush path has no length (every point is the same point),
+ * which is what a click without mouse movement produces.
+ * @param {number[]} points
+ */
+function isSinglePointPath(points) {
+  if (!points || points.length < 2) return false;
+  for (let i = 2; i < points.length; i += 2) {
+    if (points[i] !== points[0] || points[i + 1] !== points[1]) return false;
+  }
+  return true;
+}
+
+/**
+ * Stroke a brush/eraser path with the context's current lineWidth, strokeStyle and composite operation.
+ * Canvas prunes zero-length segments before stroking, so a single click would paint nothing; such a
+ * path is painted as a dot of the brush diameter instead, exactly what a stroke's round cap would draw.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number[]} points flat [x0, y0, x1, y1, ...] in the context's coordinates
+ */
+function strokeBrushPath(ctx, points) {
+  if (!points || points.length < 2) return;
+  ctx.beginPath();
+  if (isSinglePointPath(points)) {
+    ctx.arc(points[0], points[1], ctx.lineWidth / 2, 0, 2 * Math.PI);
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+    return;
+  }
+  ctx.moveTo(points[0], points[1]);
+  for (let i = 2; i < points.length; i += 2) {
+    ctx.lineTo(points[i], points[i + 1]);
+  }
+  ctx.stroke();
+}
+
 // Browsers ignore CSS cursor images larger than 128x128 px and fall back to the default cursor
 const MAX_CSS_CURSOR_SIZE = 128;
 // The circle outline (3px) plus 1px reserve on each side of the diameter
@@ -523,6 +558,8 @@ export default {
   maskDataURL2Image,
   createBrushSizeCircleCursor,
   brushCursorFitsCss,
+  isSinglePointPath,
+  strokeBrushPath,
   MAX_CSS_CURSOR_SIZE,
   labelToSVG,
   trim,
