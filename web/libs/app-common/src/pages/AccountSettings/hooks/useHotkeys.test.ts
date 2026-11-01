@@ -353,3 +353,61 @@ describe("loadAndApplyProjectHotkeys", () => {
     });
   });
 });
+
+// DW-891: eraser default E -> X, brush default B -> no key
+describe("useHotkeys changed tool defaults (DW-891)", () => {
+  afterEach(() => {
+    effectiveHotkeys.resetForTests();
+  });
+
+  const toolKey = (hotkeys: Hotkey[], element: string) => hotkeys.find((h) => h.element === element)?.key;
+
+  it("shows the new defaults to users whose saved settings hold the old ones", async () => {
+    // account saves store every hotkey, so these were saved unchanged
+    const saved = {
+      "tools:tool:eraser": { key: "E", active: true },
+      "tools:tool:brush": { key: "B", active: true },
+      "tools:tool:rect": { key: "R", active: true },
+    };
+    const callApi = mock(async () => apiResponse(saved));
+    const { result } = renderHook(() => useHotkeys(), { wrapper: createApiWrapper(callApi) });
+
+    await waitFor(() => expect(toolKey(result.current.hotkeys, "tool:eraser")).toBe("X"));
+    expect(toolKey(result.current.hotkeys, "tool:brush")).toBe("");
+    expect(toolKey(result.current.hotkeys, "tool:rect")).toBe("R");
+    expect(effectiveHotkeys.get("tools:tool:eraser")).toBeNull();
+    expect(effectiveHotkeys.get("tools:tool:brush")).toBeNull();
+  });
+
+  it("keeps keys the user chose themselves", async () => {
+    const saved = {
+      "tools:tool:eraser": { key: "q", active: true },
+      "tools:tool:brush": { key: "b", active: false }, // disabled on purpose
+    };
+    const callApi = mock(async () => apiResponse(saved));
+    const { result } = renderHook(() => useHotkeys(), { wrapper: createApiWrapper(callApi) });
+
+    await waitFor(() => expect(toolKey(result.current.hotkeys, "tool:eraser")).toBe("q"));
+    expect(result.current.hotkeys.find((h) => h.element === "tool:brush")?.active).toBe(false);
+  });
+
+  it("an account save never sends an empty key (the brush without a key is left out)", async () => {
+    const callApi = mock(async (name: string, options?: ApiOptions) => {
+      if (name === "hotkeys") return apiResponse({});
+      return { ok: true, options };
+    });
+    const { result } = renderHook(() => useHotkeys(), { wrapper: createApiWrapper(callApi) });
+    await waitFor(() => expect(result.current.hotkeys.length).toBeGreaterThan(0));
+
+    await act(async () => {
+      await result.current.saveHotkeysToAPI(result.current.hotkeys, {});
+    });
+
+    const [name, options] = callApi.mock.calls.at(-1) as [string, ApiOptions];
+    expect(name).toBe("updateHotkeys");
+    const sent = options.body?.custom_hotkeys ?? {};
+    expect(sent["tools:tool:brush"]).toBeUndefined();
+    expect(sent["tools:tool:eraser"]).toEqual(expect.objectContaining({ key: "X", active: true }));
+    expect(Object.values(sent).every((h) => typeof h.key === "string" && h.key.length > 0)).toBe(true);
+  });
+});

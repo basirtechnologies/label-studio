@@ -1,11 +1,9 @@
 import { cn } from "../../utils/bem";
 import { isDefined } from "../../utils/utilities";
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { Fragment } from "react";
-import { Hotkey } from "../../core/Hotkey";
 import { ToolbarContext } from "./ToolbarContext";
-
-const hotkeys = Hotkey("SegmentationToolbar", "Segmentation Tools");
+import { useToolExtraShortcuts, useToolShortcut } from "./useToolHotkeys";
 
 const keysDictionary = {
   plus: "+",
@@ -27,17 +25,18 @@ export const Tool = ({
   shortcut,
   onClick,
 }) => {
-  let currentShortcut = shortcut;
   const dynamic = tool?.dynamic ?? false;
   const { expanded, alignment } = useContext(ToolbarContext);
   const [hovered, setHovered] = useState(false);
+  // DW-891: a key the labeling config uses belongs to the config; the tool then has no shortcut
+  const { shortcutKey } = useToolShortcut({ shortcut, tool, onClick });
+
+  useToolExtraShortcuts(extraShortcuts, active);
 
   const shortcutView = useMemo(() => {
-    const sc = hotkeys.lookupKey(shortcut);
+    if (!isDefined(shortcutKey)) return null;
 
-    if (!isDefined(sc)) return null;
-
-    const combos = sc.split(",").map((s) => s.trim());
+    const combos = shortcutKey.split(",").map((s) => s.trim());
 
     return (
       <div className={cn("tool").elem("shortcut").toClassName()}>
@@ -58,53 +57,7 @@ export const Tool = ({
         })}
       </div>
     );
-  }, [shortcut]);
-
-  useEffect(() => {
-    const removeShortcut = () => {
-      if (currentShortcut && hotkeys.hasKeyByName(currentShortcut)) {
-        hotkeys.removeNamed(currentShortcut);
-      }
-    };
-
-    removeShortcut();
-    currentShortcut = shortcut;
-
-    if (shortcut && !hotkeys.hasKeyByName(shortcut)) {
-      hotkeys.addNamed(shortcut, () => {
-        if (!tool?.disabled && !tool?.annotation?.isDrawing) {
-          if (tool?.unselectRegionOnToolChange) {
-            tool.annotation.unselectAreas();
-          }
-          onClick?.();
-        }
-      });
-    }
-
-    return () => {
-      removeShortcut();
-    };
-  }, [shortcut, tool?.annotation]);
-
-  useEffect(() => {
-    const removeShortcuts = () => {
-      Object.keys(extraShortcuts).forEach((key) => {
-        if (hotkeys.hasKeyByName(key)) hotkeys.removeNamed(key);
-      });
-    };
-
-    const addShortcuts = () => {
-      Object.entries(extraShortcuts).forEach(([key, [_label, fn]]) => {
-        if (!hotkeys.hasKeyByName(key)) hotkeys.overwriteNamed(key, fn);
-      });
-    };
-
-    if (active) {
-      addShortcuts();
-    }
-
-    return removeShortcuts;
-  }, [extraShortcuts, active]);
+  }, [shortcutKey]);
 
   const extraContent = useMemo(() => {
     return smart && extra ? <div className={cn("tool").elem("extra").toClassName()}>{extra}</div> : null;

@@ -4,6 +4,7 @@ import { ToastType, useToast } from "@humansignal/ui/lib/toast/toast";
 import { useAPI } from "@humansignal/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type CustomHotkeys, effectiveHotkeys, mergeCustomHotkeys } from "../hotkeys/effectiveHotkeys";
+import { dropRetiredDefaults } from "../hotkeys/retiredDefaults";
 import {
   type ApiResponse,
   type ExportData,
@@ -47,16 +48,20 @@ const isProjectAccessStatus = (status: number | undefined): boolean => status ==
 
 const getHotkeyId = (hotkey: Hotkey): string => `${hotkey.section}:${hotkey.element}`;
 
+// DW-891: a hotkey without a key (e.g. the brush by default) has nothing to store, and the server
+// rejects empty keys. Leaving it out keeps the default.
 const hotkeysToCustomHotkeys = (hotkeys: Hotkey[]): CustomHotkeys =>
   Object.fromEntries(
-    hotkeys.map((hotkey) => [
-      getHotkeyId(hotkey),
-      {
-        key: hotkey.key,
-        active: hotkey.active,
-        ...(hotkey.description && { description: hotkey.description }),
-      },
-    ]),
+    hotkeys
+      .filter((hotkey) => Boolean(hotkey.key))
+      .map((hotkey) => [
+        getHotkeyId(hotkey),
+        {
+          key: hotkey.key,
+          active: hotkey.active,
+          ...(hotkey.description && { description: hotkey.description }),
+        },
+      ]),
   );
 
 const updateHotkeysWithCustomSettings = (defaultHotkeys: Hotkey[], customHotkeys: CustomHotkeys): Hotkey[] =>
@@ -168,9 +173,11 @@ export const useHotkeys = (scope: HotkeyScope = { kind: "account" }) => {
         throw new Error("The account hotkey baseline could not be loaded");
       }
 
-      const accountHotkeys = isApiFailure(accountResponse)
-        ? appSettingsCustomHotkeys()
-        : (accountResponse?.custom_hotkeys ?? appSettingsCustomHotkeys());
+      const accountHotkeys = dropRetiredDefaults(
+        isApiFailure(accountResponse)
+          ? appSettingsCustomHotkeys()
+          : (accountResponse?.custom_hotkeys ?? appSettingsCustomHotkeys()),
+      );
 
       let effective = accountHotkeys;
       if (projectId !== undefined) {

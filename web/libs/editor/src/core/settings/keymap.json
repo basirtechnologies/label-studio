@@ -263,7 +263,7 @@
   },
 
   "tool:eraser": {
-    "key": "E",
+    "key": "X",
     "description": "Select the eraser tool"
   },
 
@@ -318,7 +318,7 @@
   },
 
   "tool:brush": {
-    "key": "B",
+    "key": null,
     "description": "Select the brush tool"
   },
 

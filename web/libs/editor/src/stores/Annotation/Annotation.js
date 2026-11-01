@@ -33,7 +33,7 @@ import RelationStore from "../RelationStore";
 import { UserExtended } from "../UserStore";
 import { LinkingModes } from "./LinkingModes";
 
-const hotkeys = Hotkey("Annotations", "Annotations");
+const hotkeys = Hotkey(Hotkey.CONFIG_NAMESPACE, "Annotations");
 
 /**
  * Submission gate (BROS-1194): any region still being drawn — an unclosed

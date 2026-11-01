@@ -7,6 +7,8 @@
  * apply() is the sole publish path for runtime updates.
  */
 
+import { dropRetiredDefaults } from "./retiredDefaults";
+
 export type CustomHotkey = { key: string; active: boolean; description?: string };
 export type CustomHotkeys = Record<string, CustomHotkey>;
 export type RuntimeKeymap = Record<string, Record<string, unknown>>;
@@ -67,7 +69,7 @@ export const effectiveHotkeys = {
   bootstrap(): void {
     if (bootstrapped || !window.APP_SETTINGS) return;
     productDefaults = { ...((window.APP_SETTINGS.editor_keymap as RuntimeKeymap) ?? {}) };
-    accountBaseline = cloneCustoms(appCustoms());
+    accountBaseline = cloneCustoms(dropRetiredDefaults(appCustoms()));
     effectiveMap = cloneCustoms(accountBaseline);
     bootstrapped = true;
     sync();
@@ -87,9 +89,10 @@ export const effectiveHotkeys = {
       // Capture product defaults before the first publish overwrites editor_keymap.
       productDefaults = { ...((window.APP_SETTINGS?.editor_keymap as RuntimeKeymap) ?? {}) };
     }
-    accountBaseline = cloneCustoms(account);
+    // DW-891: stored copies of changed defaults (eraser E, brush B) follow the new defaults
+    accountBaseline = cloneCustoms(dropRetiredDefaults(account));
     if (window.APP_SETTINGS?.user) {
-      window.APP_SETTINGS.user.customHotkeys = cloneCustoms(account);
+      window.APP_SETTINGS.user.customHotkeys = cloneCustoms(accountBaseline);
     }
     effectiveMap = project ? mergeCustomHotkeys(accountBaseline, cloneCustoms(project)) : cloneCustoms(accountBaseline);
     bootstrapped = true;

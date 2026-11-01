@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { act, screen } from "@testing-library/react";
 import * as transitionUtils from "@humansignal/core/lib/utils/transition";
+import { setConfigHotkeys } from "@humansignal/core/lib/utils/configHotkeys";
 import { effectiveHotkeys } from "../../hotkeys/effectiveHotkeys";
 import { openHotkeyHelp } from "./Help";
 
@@ -41,6 +42,7 @@ describe("Hotkey Help customization link", () => {
     document.body.style.overflow = "";
     document.querySelectorAll(".ls-modal-ls").forEach((el) => el.remove());
     effectiveHotkeys.resetForTests();
+    setConfigHotkeys([]);
   });
 
   it("links to the current project's account hotkeys", async () => {
@@ -170,5 +172,71 @@ describe("Hotkey Help customization link", () => {
     const bigger = (await screen.findByText("Increase Brush/Eraser Size")).parentElement?.parentElement;
     expect(smaller).toHaveTextContent("[");
     expect(bigger).toHaveTextContent("]");
+  });
+
+  // DW-891 follow-up: changed defaults and label hotkeys winning over tool hotkeys
+  describe("tool hotkeys (DW-891)", () => {
+    const openTools = async () => {
+      window.history.pushState({}, "", "/projects/123/data?task=1");
+      window.APP_SETTINGS = {
+        ...window.APP_SETTINGS,
+        user: { ...window.APP_SETTINGS.user, customHotkeys: {} },
+        editor_keymap: {},
+      };
+      effectiveHotkeys.apply({ account: {} });
+      openModal = openHotkeyHelp(["tools"]);
+      await screen.findByText("Eraser Tool");
+    };
+    const row = (label: string) => screen.getByText(label).parentElement?.parentElement as HTMLElement;
+
+    it("shows the eraser on X and the brush without a key", async () => {
+      await openTools();
+      expect([...row("Eraser Tool").querySelectorAll("kbd")].map((k) => k.textContent)).toEqual(["X"]);
+      expect(row("Brush Tool").querySelector("kbd")).toBeNull();
+      expect(row("Brush Tool")).toHaveTextContent("Not set");
+      expect(row("Brush Tool")).not.toHaveTextContent("Disabled");
+    });
+
+    it("lists each size shortcut once", async () => {
+      await openTools();
+      expect(screen.getAllByText("Decrease Brush/Eraser Size")).toHaveLength(1);
+      expect(screen.getAllByText("Increase Brush/Eraser Size")).toHaveLength(1);
+    });
+
+    it("marks tool keys used by the loaded labeling config as not available", async () => {
+      setConfigHotkeys(["e", "b", "r", "w", "shift+f"]);
+      await openTools();
+      expect(row("Rectangle Tool")).toHaveTextContent("Not available: used by a label in this project");
+      expect(row("Magic Wand")).toHaveTextContent("Not available");
+      // keys the config does not use stay available
+      expect(row("Eraser Tool")).not.toHaveTextContent("Not available");
+      expect(row("Key Point Tool")).not.toHaveTextContent("Not available");
+      expect(screen.getAllByTestId("hotkey-used-by-config")).toHaveLength(2);
+    });
+
+    it("follows the config while the help is open", async () => {
+      await openTools();
+      expect(row("Rectangle Tool")).not.toHaveTextContent("Not available");
+      await act(async () => {
+        setConfigHotkeys(["r"]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(row("Rectangle Tool")).toHaveTextContent("Not available");
+    });
+
+    it("applies to a customised tool key too", async () => {
+      window.history.pushState({}, "", "/projects/123/data?task=1");
+      const accountHotkeys = { "tools:tool:eraser": { key: "q", active: true } };
+      window.APP_SETTINGS = {
+        ...window.APP_SETTINGS,
+        user: { ...window.APP_SETTINGS.user, customHotkeys: accountHotkeys },
+        editor_keymap: {},
+      };
+      effectiveHotkeys.apply({ account: accountHotkeys });
+      setConfigHotkeys(["q"]);
+      openModal = openHotkeyHelp(["tools"]);
+      await screen.findByText("Eraser Tool");
+      expect(row("Eraser Tool")).toHaveTextContent("Not available");
+    });
   });
 });
