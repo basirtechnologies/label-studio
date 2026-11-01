@@ -3,17 +3,31 @@ from functools import wraps
 
 import requests
 from core.feature_flags import flag_set
-from core.redis import start_job_async_or_sync
+from core.redis import redis_connected, start_job_async_or_sync
 from core.utils.common import load_func
 from core.utils.io import ssrf_safe_post
 from django.conf import settings
+from django.db import transaction
 from django.db.models import F, Q
 from django.db.models.functions import Coalesce
 from django.db.models.query import QuerySet
+from rest_framework.exceptions import APIException
 
 from .models import Webhook, WebhookAction
 
 logger = logging.getLogger(__name__)
+
+
+class WebhookRejected(APIException):
+    """Basir: a webhook answered something other than 201.
+
+    A client error (400) whose ``detail`` is the webhook's ``message``, so the editor can show it. As an
+    ``APIException`` below 500 it is not reported to Sentry (core.utils.common.custom_exception_handler).
+    """
+
+    status_code = 400
+    default_detail = 'Rejected by webhook'
+    default_code = 'webhook_rejected'
 
 
 def get_active_webhooks(organization, project, action):
@@ -45,7 +59,7 @@ def get_active_webhooks(organization, project, action):
 def run_webhook_sync(webhook, action, payload=None):
     """Run one webhook for action.
 
-    Basir: raises a plain Exception when the webhook does not answer 201 (see below).
+    Basir: raises WebhookRejected (HTTP 400) when the webhook does not answer 201 (see below).
     Other errors (connection problems, blocked URLs) are logged and swallowed.
     """
     data = {
@@ -68,9 +82,9 @@ def run_webhook_sync(webhook, action, payload=None):
 
     _record_webhook_delivery_result(webhook, response)
 
-    # Basir: a webhook that does not answer 201 fails loudly. The plain Exception is raised outside the
+    # Basir: a webhook that does not answer 201 fails loudly. WebhookRejected is raised outside the
     # try/except above on purpose, so it propagates to the caller and the action that triggered the webhook
-    # (e.g. submitting an annotation) fails when run synchronously.
+    # (e.g. submitting an annotation) fails with HTTP 400 when run synchronously.
     if response is not None and response.status_code != 201:
         try:
             message = response.json().get('message', 'Unknown error')
@@ -79,7 +93,7 @@ def run_webhook_sync(webhook, action, payload=None):
             # RequestException), which the legacy `except requests.RequestException` caught and logged.
             logging.error(exc, exc_info=True)
             return None
-        raise Exception(message)
+        raise WebhookRejected(message)
 
     return response
 
@@ -245,11 +259,27 @@ def emit_webhooks(organization, project, action, payload):
         emit_webhooks_sync(organization, project, action, payload)
 
 
-def api_webhook(action):
+def webhooks_run_inline():
+    """True when emit_webhooks_for_instance delivers in the calling request rather than in an RQ worker.
+
+    Mirrors emit_webhooks_for_instance (RQ only behind the flag) and start_job_async_or_sync (RQ only
+    when Redis is connected).
+    """
+    return not (flag_set('fflag_fix_back_lsdv_4604_excess_sql_queries_in_api_short') and redis_connected())
+
+
+def api_webhook(action, atomic=False):
     """Decorator emit webhooks for APIView methods: post, put, patch.
 
     Used for simple Create/Update methods.
     The decorator expects authorized request and response with 'id' key in data.
+
+    Basir: with ``atomic=True`` the view and an inline (synchronous) webhook delivery run in one
+    ``transaction.atomic()``. When a webhook rejects the change (WebhookRejected), everything the view
+    wrote in this transaction is rolled back, so a rejected annotation is not saved and a retry doesn't
+    create a duplicate. ``transaction.on_commit`` callbacks registered by the view (e.g. storage exports)
+    run only after the webhooks accepted. When webhooks are delivered by RQ instead, there is nothing to
+    wait for: the view commits first and the webhook job is queued as before.
 
     Example:
         ```
@@ -259,25 +289,33 @@ def api_webhook(action):
         ```
     """
 
+    def emit(request, response):
+        action_meta = WebhookAction.ACTIONS[action]
+        many = action_meta['many']
+        instance = action_meta['model'].objects.get(id=response.data.get('id'))
+        if many:
+            instance = [instance]
+        project = None
+        if 'project-field' in action_meta:
+            project = get_nested_field(instance, action_meta['project-field'])
+        emit_webhooks_for_instance(
+            request.user.active_organization,
+            project,
+            action,
+            instance,
+        )
+
     def decorator(func):
         @wraps(func)
         def wrap(self, request, *args, **kwargs):
-            response = func(self, request, *args, **kwargs)
+            if atomic and webhooks_run_inline():
+                with transaction.atomic():
+                    response = func(self, request, *args, **kwargs)
+                    emit(request, response)
+                return response
 
-            action_meta = WebhookAction.ACTIONS[action]
-            many = action_meta['many']
-            instance = action_meta['model'].objects.get(id=response.data.get('id'))
-            if many:
-                instance = [instance]
-            project = None
-            if 'project-field' in action_meta:
-                project = get_nested_field(instance, action_meta['project-field'])
-            emit_webhooks_for_instance(
-                request.user.active_organization,
-                project,
-                action,
-                instance,
-            )
+            response = func(self, request, *args, **kwargs)
+            emit(request, response)
             return response
 
         return wrap

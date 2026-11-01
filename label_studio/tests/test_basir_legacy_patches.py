@@ -3,7 +3,8 @@
 1. `label-studio start/init --username X` gives the user its own organization.
 2. Signup joins the organization of the invite token (and leaves the default one);
    login and signup do not check CSRF.
-3. A webhook that does not answer 201 raises, and the exception reaches the caller.
+3. A webhook that does not answer 201 raises WebhookRejected (HTTP 400); a rejected annotation create/update is
+   rolled back.
 """
 
 import json
@@ -16,7 +17,7 @@ from organizations.models import Organization, OrganizationMember
 from server import _create_user
 from users.models import User
 from webhooks.models import Webhook, WebhookAction
-from webhooks.utils import run_webhook_sync
+from webhooks.utils import WebhookRejected, run_webhook_sync
 
 from label_studio.core.argparser import parse_input_args
 
@@ -230,10 +231,10 @@ def test_webhook_201_returns_response(webhook):
 def test_webhook_non_201_raises(webhook, status_code, body, message):
     with requests_mock.Mocker() as m:
         m.post(webhook.url, status_code=status_code, json=body)
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(WebhookRejected) as excinfo:
             run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED, {'data': 'x'})
-    assert type(excinfo.value) is Exception
-    assert str(excinfo.value) == message
+    assert excinfo.value.status_code == 400
+    assert str(excinfo.value.detail) == message
 
 
 @pytest.mark.django_db
@@ -251,39 +252,158 @@ def test_webhook_connection_error_is_swallowed(webhook):
         assert run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED) is None
 
 
-@pytest.mark.django_db
-def test_rejected_webhook_fails_annotation_submit(configured_project, business_client, webhook):
-    # Without Redis, webhooks run synchronously in the request, so the exception reaches the API call.
-    task = configured_project.tasks.first()
-    payload = {
-        'result': [
-            {
-                'value': {'choices': ['class_A']},
-                'id': 'basir1',
-                'from_name': 'text_class',
-                'to_name': 'text',
-                'type': 'choices',
-            }
-        ],
-        'project': configured_project.id,
+# ---------------------------------------------------------------- 3b. rejected annotations are rolled back
+
+ML_BACKEND_WEBHOOK = 'http://localhost:8999/webhook'  # auto-created for configured_project's ML backend
+LABEL_SERVER_URL = 'http://127.0.0.1:8000/label-server/'
+
+
+@pytest.fixture
+def label_server(configured_project):
+    """Our Label Server: a project webhook for ANNOTATION_CREATED / ANNOTATION_UPDATED."""
+    hook = Webhook.objects.create(
+        organization=configured_project.organization,
+        project=configured_project,
+        url=LABEL_SERVER_URL,
+        send_for_all_actions=False,
+    )
+    WebhookAction.objects.create(webhook=hook, action=WebhookAction.ANNOTATION_CREATED)
+    WebhookAction.objects.create(webhook=hook, action=WebhookAction.ANNOTATION_UPDATED)
+    return hook
+
+
+def _result(choice):
+    return [
+        {
+            'value': {'choices': [choice]},
+            'id': 'basir1',
+            'from_name': 'text_class',
+            'to_name': 'text',
+            'type': 'choices',
+        }
+    ]
+
+
+def _post_annotation(client, project, task, choice='class_A', **extra):
+    return client.post(
+        f'/api/tasks/{task.id}/annotations/?project={project.id}',
+        data=json.dumps({'result': _result(choice), 'project': project.id, **extra}),
+        content_type='application/json',
+    )
+
+
+def _label_server_mock(m, **response):
+    m.post(ML_BACKEND_WEBHOOK, status_code=201, json={})  # the ML backend's webhook accepts
+    m.post(LABEL_SERVER_URL, **response)
+
+
+def _task_state(task):
+    task.refresh_from_db()
+    summary = task.project.summary
+    summary.refresh_from_db()
+    return {
+        'annotations': list(task.annotations.values_list('id', 'result')),
+        'is_labeled': task.is_labeled,
+        'total_annotations': task.total_annotations,
+        'cancelled_annotations': task.cancelled_annotations,
+        'summary_created_annotations': dict(summary.created_annotations or {}),
+        'summary_created_labels': dict(summary.created_labels or {}),
     }
-    annotations_before = task.annotations.count()
+
+
+@pytest.mark.django_db
+def test_rejected_annotation_create_is_rolled_back(configured_project, business_client, label_server):
+    from tasks.models import AnnotationDraft
+
+    task = configured_project.tasks.first()
+    draft = AnnotationDraft.objects.create(task=task, user=business_client.user, result=_result('class_A'))
+    before = _task_state(task)
+
     with requests_mock.Mocker(real_http=True) as m:
-        # The project's ML backend auto-created a webhook for all actions; let it accept so only ours rejects.
-        m.post('http://localhost:8999/webhook', status_code=201, json={})
-        m.post(webhook.url, status_code=400, json={'message': 'backend rejected annotation'})
-        response = business_client.post(
-            f'/api/tasks/{task.id}/annotations?project={configured_project.id}',
-            data=json.dumps(payload),
+        _label_server_mock(m, status_code=400, json={'message': 'wrong object'})
+        response = _post_annotation(business_client, configured_project, task, draft_id=draft.id)
+
+    assert response.status_code == 400, response.content
+    assert response.json()['detail'] == 'wrong object'
+    assert any(r.url == LABEL_SERVER_URL for r in m.request_history)
+    # nothing from the request survives: no annotation row; counters, summary and the draft unchanged
+    assert _task_state(task) == before
+    assert not task.annotations.exists()
+    assert AnnotationDraft.objects.filter(id=draft.id).exists()
+
+    # retrying with the same rejection still leaves no annotation (no duplicates)
+    with requests_mock.Mocker(real_http=True) as m:
+        _label_server_mock(m, status_code=400, json={'message': 'wrong object'})
+        assert _post_annotation(business_client, configured_project, task).status_code == 400
+    assert not task.annotations.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('method', ['patch', 'put'])
+def test_rejected_annotation_update_is_rolled_back(configured_project, business_client, label_server, method):
+    task = configured_project.tasks.first()
+    with requests_mock.Mocker(real_http=True) as m:
+        _label_server_mock(m, status_code=201, json={})
+        created = _post_annotation(business_client, configured_project, task, choice='class_A')
+    assert created.status_code == 201, created.content
+    annotation_id = created.json()['id']
+    before = _task_state(task)
+
+    with requests_mock.Mocker(real_http=True) as m:
+        _label_server_mock(m, status_code=400, json={'message': 'wrong object'})
+        response = getattr(business_client, method)(
+            f'/api/annotations/{annotation_id}/',
+            data=json.dumps({'result': _result('class_B')}),
             content_type='application/json',
         )
 
-    # The API's exception handler turns the exception into a 500 with the backend's message.
-    assert response.status_code == 500
-    assert response.json()['detail'] == 'backend rejected annotation'
-    assert any(r.url == webhook.url for r in m.request_history)
-    # The webhook runs after the annotation is saved, so the annotation still exists (same as the legacy fork).
-    assert task.annotations.count() == annotations_before + 1
+    assert response.status_code == 400, response.content
+    assert response.json()['detail'] == 'wrong object'
+    assert _task_state(task) == before  # result still class_A; counters and summary unchanged
+
+
+@pytest.mark.django_db
+def test_accepted_annotation_is_saved(configured_project, business_client, label_server):
+    task = configured_project.tasks.first()
+    with requests_mock.Mocker(real_http=True) as m:
+        _label_server_mock(m, status_code=201, json={})
+        response = _post_annotation(business_client, configured_project, task, choice='class_A')
+        assert response.status_code == 201, response.content
+        annotation_id = response.json()['id']
+        patched = business_client.patch(
+            f'/api/annotations/{annotation_id}/',
+            data=json.dumps({'result': _result('class_B')}),
+            content_type='application/json',
+        )
+    assert patched.status_code == 200, patched.content
+    task.refresh_from_db()
+    assert task.is_labeled and task.total_annotations == 1
+    assert task.annotations.get().result[0]['value']['choices'] == ['class_B']
+    sent = [r.json() for r in m.request_history if r.url == LABEL_SERVER_URL]
+    assert [p['action'] for p in sent] == [WebhookAction.ANNOTATION_CREATED, WebhookAction.ANNOTATION_UPDATED]
+    assert sent[0]['annotation']['id'] == annotation_id  # the receiver gets the full annotation in the payload
+
+
+@pytest.mark.django_db
+def test_unreachable_webhook_still_saves_annotation(configured_project, business_client, label_server):
+    task = configured_project.tasks.first()
+    with requests_mock.Mocker(real_http=True) as m:
+        _label_server_mock(m, exc=requests.exceptions.ConnectTimeout)
+        response = _post_annotation(business_client, configured_project, task)
+    assert response.status_code == 201, response.content
+    assert task.annotations.count() == 1
+
+
+@pytest.mark.django_db
+def test_webhook_rejection_is_not_sent_to_sentry(configured_project, business_client, label_server):
+    from unittest import mock
+
+    task = configured_project.tasks.first()
+    with mock.patch('core.utils.common.logger') as handler_logger, requests_mock.Mocker(real_http=True) as m:
+        _label_server_mock(m, status_code=400, json={'message': 'wrong object'})
+        assert _post_annotation(business_client, configured_project, task).status_code == 400
+    extras = [call.kwargs.get('extra', {}) for call in handler_logger.error.call_args_list]
+    assert extras and all(extra.get('sentry_skip') is True for extra in extras)
 
 
 # ---------------------------------------------------------------- deployment: internal webhook host
@@ -341,7 +461,7 @@ def test_internal_webhook_works_with_ssrf_protection_off(
         m.post(BASIR_WEBHOOK_URL, status_code=201, json={})
         assert run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED).status_code == 201
         m.post(BASIR_WEBHOOK_URL, status_code=400, json={'message': 'rejected'})
-        with pytest.raises(Exception, match='rejected'):
+        with pytest.raises(WebhookRejected, match='rejected'):
             run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED)
     assert m.call_count == 2
 
@@ -352,7 +472,7 @@ def test_auto_disable_off_with_zero_threshold(webhook, settings):
     with requests_mock.Mocker() as m:
         m.post(webhook.url, status_code=400, json={'message': 'rejected'})
         for _ in range(60):
-            with pytest.raises(Exception, match='rejected'):
+            with pytest.raises(WebhookRejected, match='rejected'):
                 run_webhook_sync(webhook, WebhookAction.PROJECT_CREATED)
     webhook.refresh_from_db()
     assert webhook.is_active is True
