@@ -4,7 +4,7 @@ import { isDefined } from "../utils/utils";
 import { Modal } from "../components/Common/Modal/Modal";
 import { CommentsSdk } from "./comments-sdk";
 import { errorHandlerAllowSpecialErrors } from "./special-errors";
-import { redistributedAnnotationDetail } from "./operation-error-toast";
+import { operationErrorDetail, redistributedAnnotationDetail } from "./operation-error-toast";
 // import { LSFHistory } from "./lsf-history";
 import { annotationToServer, formatDraftCreatedUsernameFromUser, taskToLSFormat } from "./lsf-utils";
 import { when, runInAction } from "mobx";
@@ -841,6 +841,13 @@ export class LSFWrapper {
       const deniedDetail = redistributedAnnotationDetail(status, result?.response);
       if (deniedDetail) {
         this.datamanager.invoke("toast", { message: deniedDetail, type: "error" });
+        return;
+      }
+
+      // Show the server's reason when it gives one (e.g. a webhook rejection); generic copy is the fallback
+      const serverDetail = operationErrorDetail(status, result?.response);
+      if (serverDetail) {
+        this.datamanager.invoke("toast", { message: `${errorAction}: ${serverDetail}`, type: "error" });
         return;
       }
 
