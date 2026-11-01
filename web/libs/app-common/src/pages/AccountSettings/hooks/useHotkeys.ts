@@ -55,13 +55,13 @@ const hotkeysToCustomHotkeys = (hotkeys: Hotkey[]): CustomHotkeys =>
     hotkeys
       .filter((hotkey) => Boolean(hotkey.key))
       .map((hotkey) => [
-      getHotkeyId(hotkey),
-      {
-        key: hotkey.key,
-        active: hotkey.active,
-        ...(hotkey.description && { description: hotkey.description }),
-      },
-    ]),
+        getHotkeyId(hotkey),
+        {
+          key: hotkey.key,
+          active: hotkey.active,
+          ...(hotkey.description && { description: hotkey.description }),
+        },
+      ]),
   );
 
 const updateHotkeysWithCustomSettings = (defaultHotkeys: Hotkey[], customHotkeys: CustomHotkeys): Hotkey[] =>

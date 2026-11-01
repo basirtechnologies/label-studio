@@ -196,7 +196,10 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
   it("extra tool shortcuts ([ / ]) follow the same rule and keep working otherwise", async () => {
     const decrease = mock();
     const increase = mock();
-    const extra = { "tool:decrease-tool": ["Decrease size", decrease], "tool:increase-tool": ["Increase size", increase] };
+    const extra = {
+      "tool:decrease-tool": ["Decrease size", decrease],
+      "tool:increase-tool": ["Increase size", increase],
+    };
     addConfigLabel("bracket", "]");
     const { unmount } = render(<ToolHarness active name="tool:brush" extraShortcuts={extra} onClick={() => {}} />);
     await flush();

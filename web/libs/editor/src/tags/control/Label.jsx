@@ -14,6 +14,7 @@ import { AnnotationMixin } from "../../mixins/AnnotationMixin";
 import ProcessAttrsMixin from "../../mixins/ProcessAttrs";
 import { TagParentMixin } from "../../mixins/TagParentMixin";
 import ToolsManager from "../../tools/Manager";
+import { brushToSelectOnLabelPick } from "./brushLabelTool";
 import Utils from "../../utils";
 import { parseValue } from "../../utils/data";
 import { sanitizeHtml } from "../../utils/html";
@@ -208,6 +209,15 @@ const Model = types
         if (tool && (isNotSameTool || !selectedTool)) {
           manager.selectTool(tool, true);
         }
+      }
+
+      // DW-891: picking a brush label while erasing goes back to the brush, also when another label of the
+      // group is already selected (the brush has no default hotkey: its labels select it)
+      if (!self.selected) {
+        const manager = ToolsManager.getInstance({ name: self.parent.toname });
+        const brush = brushToSelectOnLabelPick(self.parent?.tools, manager?.findSelectedTool?.());
+
+        if (brush) manager.selectTool(brush, true);
       }
 
       if (self.isEmpty) {
