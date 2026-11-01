@@ -342,6 +342,18 @@ describe("Brush tool", () => {
       expect(annotation.history.freeze).not.toHaveBeenCalled();
     });
 
+    // DW-888 regression: the canvas area not covered by the image is not drawable
+    it.each([
+      [150, 50],
+      [50, 150],
+    ])("starts no stroke when pressed outside the image (offset %p, %p)", (offsetX, offsetY) => {
+      const tool = createBrush();
+      const ev = { target: stageContent, button: 0, shiftKey: false, offsetX, offsetY };
+      tool.mousedownEv(ev, null, [offsetX, offsetY]);
+      expect(annotation.history.freeze).not.toHaveBeenCalled();
+      expect(tool.mode).not.toBe("drawing");
+    });
+
     it("returns early when multiImage and currentImage differs from brush item_index", () => {
       const mockBrush = {
         type: "brushregion",

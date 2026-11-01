@@ -160,6 +160,18 @@ describe("Erase tool", () => {
     expect(mockBrush.addPoint).not.toHaveBeenCalled();
   });
 
+  // DW-888 regression: erasing can't start in the canvas area not covered by the image (800x600)
+  it.each([
+    [801, 100],
+    [100, 601],
+  ])("mousedownEv outside the image (offset %p, %p) does not start erasing", (offsetX, offsetY) => {
+    const tool = createTool();
+    mockBrush.beginPath.mockClear();
+    tool.mousedownEv({ target: stageContent, offsetX, offsetY }, null, [offsetX, offsetY]);
+    expect(tool.mode).not.toBe("drawing");
+    expect(mockBrush.beginPath).not.toHaveBeenCalled();
+  });
+
   it("mousedownEv when getSelectedShape is null returns early", () => {
     const env = {
       object: makeMockObj(),
