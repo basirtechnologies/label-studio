@@ -34,7 +34,6 @@ ADMIN_ONLY_PERMISSIONS = frozenset(
         all_permissions.tasks_change,
         all_permissions.tasks_delete,
         all_permissions.views_reset,
-        all_permissions.labels_view,  # organization label library (links to every project)
         all_permissions.labels_create,
         all_permissions.labels_change,
         all_permissions.labels_delete,

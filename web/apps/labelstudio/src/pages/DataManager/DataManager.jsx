@@ -11,6 +11,7 @@ import { useContextProps, useParams } from "../../providers/RoutesProvider";
 import { addCrumb, deleteCrumb } from "../../services/breadrumbs";
 import { cn } from "../../utils/bem";
 import { isDefined } from "../../utils/helpers";
+import { canManageProjects } from "../../utils/ls-access";
 import { ImportModal } from "../CreateProject/Import/ImportModal";
 import { ExportPage } from "../ExportPage/ExportPage";
 import { clearProjectHotkeysRuntime } from "@humansignal/app-common/pages/AccountSettings/hooks/useHotkeys";
@@ -241,9 +242,8 @@ DataManagerPage.context = ({ dmRef }) => {
   const { project } = useProject();
   const [mode, setMode] = useState(dmRef?.mode ?? "explorer");
 
-  const links = {
-    "/settings": "Settings",
-  };
+  // Basir DW-907: project settings are for LS admins
+  const links = canManageProjects() ? { "/settings": "Settings" } : {};
 
   const updateCrumbs = (currentMode) => {
     const isExplorer = currentMode === "explorer";

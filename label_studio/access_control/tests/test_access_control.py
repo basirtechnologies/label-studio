@@ -301,7 +301,7 @@ def admin_only_requests(world, labeler):
         ('members', 'get', f'/api/organizations/{world.org.id}/memberships', None),
         ('invite', 'get', '/api/invite', None),
         ('update other user', 'patch', f'/api/users/{world.owner.id}/', {'first_name': 'x'}),
-        ('labels', 'get', '/api/labels/', None),
+        ('create label', 'post', '/api/labels/', {'value': {'x': 1}, 'title': 'x', 'from_name': 'c'}),
         ('access groups', 'get', '/api/access-control/groups/', None),
         ('users access', 'get', '/api/access-control/users/', None),
         ('set own role', 'patch', f'/api/access-control/users/{labeler.id}/', {'role': 'admin'}),
@@ -506,3 +506,28 @@ def test_access_control_off_is_upstream_behaviour(world, auth):
     assert client.get('/api/projects/?include=id,access_groups').json()['results'][0]['access_groups'] is not None
     data = client.get('/api/current-user/whoami').json()
     assert 'projects.create' in data['permissions'] and data['ls_access']['can_manage'] is True
+
+
+@enabled
+def test_label_links_are_limited_to_the_users_projects(world):
+    from labels_manager.models import Label, LabelLink
+
+    label = Label.objects.create(
+        title='shared', value={'choices': ['a']}, organization=world.org, created_by=world.owner
+    )
+    for group in (MALE, FEMALE):
+        LabelLink.objects.create(label=label, project=world.projects[group], from_name='c')
+    client = session_client(world.user(role='labeler', groups=[MALE]))
+
+    response = client.get('/api/label_links/')
+    assert response.status_code == 200
+    assert {link['project'] for link in response.json()['results']} == {world.projects[MALE].id}
+    assert client.get(f'/api/label_links/?project={world.projects[FEMALE].id}').status_code == 404
+
+
+@enabled
+def test_page_tells_the_ui_the_role(world):
+    page = session_client(world.user(role='labeler', groups=[MALE])).get('/projects/').content.decode()
+    assert '"can_manage": false' in page and '"role": "labeler"' in page
+    page = session_client(world.user(role='admin')).get('/projects/').content.decode()
+    assert '"can_manage": true' in page

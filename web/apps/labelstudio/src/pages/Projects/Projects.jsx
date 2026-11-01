@@ -11,6 +11,7 @@ import { CreateProject } from "../CreateProject/CreateProject";
 import { DataManagerPage } from "../DataManager/DataManager";
 import { SettingsPage } from "../Settings";
 import { EmptyProjectsList, ProjectsList } from "./ProjectsList";
+import { canManageProjects } from "../../utils/ls-access";
 import { useAbortController, useUpdatePageTitle } from "@humansignal/core";
 import "./Projects.prefix.css";
 
@@ -53,6 +54,8 @@ export const ProjectsPage = () => {
       "is_published",
       "assignment_settings",
       "state",
+      // Basir DW-907: access groups, shown to LS admins as tags
+      ...(canManageProjects() ? ["access_groups"] : []),
     ].join(",");
 
     const data = await api.callApi("projects", {
@@ -161,7 +164,7 @@ ProjectsPage.routes = ({ store }) => [
   },
 ];
 ProjectsPage.context = ({ openModal, showButton }) => {
-  if (!showButton) return null;
+  if (!showButton || !canManageProjects()) return null;
   return (
     <Button onClick={openModal} size="small" aria-label="Create new project">
       Create

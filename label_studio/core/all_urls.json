@@ -1896,6 +1896,78 @@
         "decorators": ""
     },
     {
+        "url": "/admin/access_control/accessgroup/",
+        "module": "django.contrib.admin.options.changelist_view",
+        "name": "admin:access_control_accessgroup_changelist",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/accessgroup/add/",
+        "module": "django.contrib.admin.options.add_view",
+        "name": "admin:access_control_accessgroup_add",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/accessgroup/<path:object_id>/history/",
+        "module": "django.contrib.admin.options.history_view",
+        "name": "admin:access_control_accessgroup_history",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/accessgroup/<path:object_id>/delete/",
+        "module": "django.contrib.admin.options.delete_view",
+        "name": "admin:access_control_accessgroup_delete",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/accessgroup/<path:object_id>/change/",
+        "module": "django.contrib.admin.options.change_view",
+        "name": "admin:access_control_accessgroup_change",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/accessgroup/<path:object_id>/",
+        "module": "django.views.generic.base.RedirectView",
+        "name": "",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/useraccess/",
+        "module": "django.contrib.admin.options.changelist_view",
+        "name": "admin:access_control_useraccess_changelist",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/useraccess/add/",
+        "module": "django.contrib.admin.options.add_view",
+        "name": "admin:access_control_useraccess_add",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/useraccess/<path:object_id>/history/",
+        "module": "django.contrib.admin.options.history_view",
+        "name": "admin:access_control_useraccess_history",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/useraccess/<path:object_id>/delete/",
+        "module": "django.contrib.admin.options.delete_view",
+        "name": "admin:access_control_useraccess_delete",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/useraccess/<path:object_id>/change/",
+        "module": "django.contrib.admin.options.change_view",
+        "name": "admin:access_control_useraccess_change",
+        "decorators": ""
+    },
+    {
+        "url": "/admin/access_control/useraccess/<path:object_id>/",
+        "module": "django.views.generic.base.RedirectView",
+        "name": "",
+        "decorators": ""
+    },
+    {
         "url": "/django-rq/stats.json/",
         "module": "django_rq.stats_views.stats_json",
         "name": "django_rq:home_json",
@@ -2109,6 +2181,24 @@
         "url": "/api/session-policy/",
         "module": "session_policy.api.SessionTimeoutPolicyView",
         "name": "session_policy:session-policy",
+        "decorators": ""
+    },
+    {
+        "url": "/api/access-control/groups/",
+        "module": "access_control.api.AccessGroupListAPI",
+        "name": "access_control:access-group-list",
+        "decorators": ""
+    },
+    {
+        "url": "/api/access-control/users/",
+        "module": "access_control.api.UserAccessListAPI",
+        "name": "access_control:user-access-list",
+        "decorators": ""
+    },
+    {
+        "url": "/api/access-control/users/<int:pk>/",
+        "module": "access_control.api.UserAccessAPI",
+        "name": "access_control:user-access-detail",
         "decorators": ""
     },
     {

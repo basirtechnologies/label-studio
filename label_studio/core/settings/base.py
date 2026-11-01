@@ -383,6 +383,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.settings',
+                'access_control.context_processors.ls_access',  # Basir DW-907
             ],
             'builtins': ['django.templatetags.i18n'],
         },

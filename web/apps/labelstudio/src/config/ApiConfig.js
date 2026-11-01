@@ -24,6 +24,9 @@ export const API_CONFIG = {
     deleteProject: "DELETE:/projects/:pk",
     projectResetCache: "POST:/projects/:pk/summary/reset",
 
+    // Basir DW-907: access groups (LS admins)
+    accessGroups: "/access-control/groups/",
+
     // Presigning
     presignUrlForTask: "/../tasks/:taskID/presign",
     presignUrlForProject: "/../projects/:projectId/presign",

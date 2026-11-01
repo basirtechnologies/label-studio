@@ -149,3 +149,15 @@ def shows_access_groups(request, sparse_fields=None) -> bool:
     if sparse_fields is not None:
         return 'access_groups' in sparse_fields
     return is_enabled() or access_groups_requested(request)
+
+
+def ls_access_info(user) -> dict:
+    """What the UI gets (whoami and window.APP_SETTINGS.user.ls_access)."""
+    return {
+        'enabled': is_enabled(),
+        'role': get_role(user),
+        'is_admin': is_ls_admin(user),
+        # true for LS admins, and for everyone while access control is off
+        'can_manage': not is_restricted(user),
+        'access_groups': get_group_names(user),
+    }

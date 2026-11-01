@@ -1,6 +1,7 @@
 """Basir DW-907: serializers for access groups and LS roles."""
 
 from access_control import access
+from access_control.access import ls_access_info
 from access_control.models import AccessGroup, LSRole
 from access_control.permissions import ADMIN_ONLY_PERMISSIONS
 from access_control.services import normalize_group_names
@@ -73,11 +74,4 @@ class LSAccessWhoAmIUserSerializer(BaseWhoAmIUserSerializer):
         return permissions
 
     def get_ls_access(self, user) -> dict:
-        return {
-            'enabled': access.is_enabled(),
-            'role': access.get_role(user),
-            'is_admin': access.is_ls_admin(user),
-            # true for LS admins, and for everyone while access control is off
-            'can_manage': not access.is_restricted(user),
-            'access_groups': access.get_group_names(user),
-        }
+        return ls_access_info(user)
