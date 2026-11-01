@@ -14,7 +14,7 @@ from access_control.models import AccessGroup, UserAccess
 from access_control.services import set_project_groups, set_user_access
 from core.feature_flags import flag_set
 from django.conf import settings
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.test import override_settings
 from jwt_auth.models import LSAPIToken
 from organizations.tests.factories import OrganizationFactory
@@ -482,6 +482,16 @@ def test_basir_set_user_access_command(world, capsys):
 
     call_command('basir_set_user_access', '--email', 'male@mail.com', '--role', 'none', '--groups', '')
     assert UserAccess.objects.get(user=user).role is None and not user.access_groups.exists()
+
+    # DW-908: link a local account to its Keycloak user by hand
+    call_command('basir_set_user_access', '--email', 'male@mail.com', '--keycloak-sub', 'f3b1-sub')
+    assert UserAccess.objects.get(user=user).keycloak_sub == 'f3b1-sub'
+    other = world.user(email='other@mail.com')
+    with pytest.raises(CommandError, match='already linked'):
+        call_command('basir_set_user_access', '--email', 'other@mail.com', '--keycloak-sub', 'f3b1-sub')
+    assert access.get_role(other) is None
+    call_command('basir_set_user_access', '--email', 'male@mail.com', '--keycloak-sub', '')
+    assert UserAccess.objects.get(user=user).keycloak_sub is None
 
 
 # --- flag off = upstream behaviour ----------------------------------------------------------------------------------

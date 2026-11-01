@@ -2202,6 +2202,18 @@
         "decorators": ""
     },
     {
+        "url": "/oidc/authenticate/",
+        "module": "keycloak_auth.views.KeycloakLoginView",
+        "name": "oidc_authentication_init",
+        "decorators": ""
+    },
+    {
+        "url": "/oidc/callback/",
+        "module": "keycloak_auth.views.KeycloakCallbackView",
+        "name": "oidc_authentication_callback",
+        "decorators": ""
+    },
+    {
         "url": "/docs/api/schema/",
         "module": "drf_spectacular.views.SpectacularAPIView",
         "name": "schema",

@@ -15,6 +15,7 @@
 {% block user_content %}
   <div class="form-wrapper">
     <h2>Log in</h2>
+    {% include 'keycloak_auth/login_options.html' %}
     <form id="login-form" action="{% url 'user-login' %}?next={{ next }}" method="post">
       {% csrf_token %}
       <div class="input-wrapper">
