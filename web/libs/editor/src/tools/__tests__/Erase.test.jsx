@@ -57,8 +57,10 @@ describe("Erase tool", () => {
     expect(tool.controls).toHaveLength(1);
     const rangeControl = tool.controls[0];
     expect(rangeControl.props.onChange).toBeDefined();
-    rangeControl.props.onChange(20);
+    rangeControl.props.onChange(7); // DW-890: step index -> BRUSH_SIZE_STEPS[7] = 20
     expect(tool.strokeWidth).toBe(20);
+    expect(rangeControl.props.max).toBe(10);
+    expect(tool.controls[0].props.valueLabel(tool.controls[0].props.value)).toBe(20);
     expect(tool.extraShortcuts).toEqual(
       expect.objectContaining({
         "tool:decrease-tool": expect.any(Array),

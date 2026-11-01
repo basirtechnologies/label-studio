@@ -102,6 +102,23 @@
     }
   }
 
+  &__value {
+    font-size: 11px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    color: var(--color-neutral-content);
+    min-width: 20px;
+
+    .range_align_horizontal & {
+      margin-left: 6px;
+    }
+
+    .range_align_vertical & {
+      margin-top: 4px;
+    }
+  }
+
   &__icon {
     width: 28px;
     height: 28px;

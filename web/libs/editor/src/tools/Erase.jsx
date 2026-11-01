@@ -9,6 +9,7 @@ import { IconEraserTool } from "@humansignal/icons";
 import { Tool } from "../components/Toolbar/Tool";
 import { Range } from "../common/Range/Range";
 import { BrushCursorMixin } from "./Brush";
+import { BRUSH_SIZE_STEPS, sizeAtStep, stepIndexForSize } from "./brushSizeSteps";
 
 const MIN_SIZE = 1;
 const MAX_SIZE = 50;
@@ -69,15 +70,18 @@ const _Tool = types
       return [
         <Range
           key="eraser-size"
-          value={self.strokeWidth}
-          min={MIN_SIZE}
-          max={MAX_SIZE}
+          // DW-890: the slider moves through BRUSH_SIZE_STEPS; its value is the step index
+          value={stepIndexForSize(self.strokeWidth)}
+          min={0}
+          max={BRUSH_SIZE_STEPS.length - 1}
+          step={1}
+          valueLabel={(index) => (index === stepIndexForSize(self.strokeWidth) ? self.strokeWidth : sizeAtStep(index))}
           reverse
           align="vertical"
           minIcon={<IconDot size={8} />}
           maxIcon={<IconDot size={16} />}
-          onChange={(value) => {
-            self.setStroke(value);
+          onChange={(index) => {
+            self.setStroke(sizeAtStep(index));
           }}
         />,
       ];

@@ -1,4 +1,4 @@
-import { type CSSProperties, type FC, type MouseEvent as RMouseEvent, useCallback } from "react";
+import { type CSSProperties, type FC, type MouseEvent as RMouseEvent, type ReactNode, useCallback } from "react";
 import { cn } from "../../utils/bem";
 import { clamp, isDefined } from "../../utils/utilities";
 import { useValueTracker } from "../Utils/useValueTracker";
@@ -25,6 +25,8 @@ export interface RangeProps {
   onChange?: (value: RangeValueType) => void;
   onMinIconClick?: (value: RangeValueType) => void;
   onMaxIconClick?: (value: RangeValueType) => void;
+  /** Renders the current value next to the slider (updates live while dragging) */
+  valueLabel?: (value: RangeValueType) => ReactNode;
 }
 
 const arrayReverse = <T extends any[] = any[]>(array: T, reverse = false) => {
@@ -48,6 +50,7 @@ export const Range: FC<RangeProps> = ({
   onChange,
   onMinIconClick,
   onMaxIconClick,
+  valueLabel,
 }) => {
   const initialValue = value ?? defaultValue ?? (multi ? [0, 100] : 0);
 
@@ -208,6 +211,11 @@ export const Range: FC<RangeProps> = ({
               {maxIcon}
             </div>
           )}
+      {valueLabel && (
+        <div className={cn("range").elem("value").toClassName()} aria-label="range-value">
+          {valueLabel(currentValue as RangeValueType)}
+        </div>
+      )}
     </div>
   );
 };
