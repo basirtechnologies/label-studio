@@ -66,6 +66,12 @@ export const FF_FIT_1304_STRICT_OVERLAP = "fflag_feat_all_fit_1304_strict_overla
 
 export const FF_MODAL_WINDOW_APP_CHROME = "fflag_feat_front_fit_1559_modal_window_short";
 
+/**
+ * Basir DW-889: keep zoom and position when paging between the images of a multi-image Image tag
+ * (`valueList`). On by default via label_studio/feature_flags.json.
+ */
+export const FF_KEEP_ZOOM_BETWEEN_IMAGES = "fflag_feat_front_dw_889_keep_zoom_between_images_short";
+
 Object.assign(window, {
   APP_SETTINGS: {
     ...(window.APP_SETTINGS ?? {}),

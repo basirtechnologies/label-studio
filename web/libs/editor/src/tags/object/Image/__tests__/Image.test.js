@@ -802,6 +802,143 @@ describe("Image model", () => {
     });
   });
 
+  // DW-889: paging between the images of a multi-image tag keeps zoom scale and position
+  describe("keep zoom between images (multi-image)", () => {
+    const FLAG = "fflag_feat_front_dw_889_keep_zoom_between_images_short";
+
+    function createMultiImage(flagOn = true) {
+      window.APP_SETTINGS = { ...(window.APP_SETTINGS ?? {}), feature_flags: { [FLAG]: flagOn } };
+      const store = createStore({
+        annotation: {
+          toNames: new Map(),
+          regionStore: { regions: [], suggestions: [] },
+          history: defaultHistory,
+          names: new Map(),
+          image: {
+            name: "pages",
+            valuelist: "$pages",
+            type: "image",
+            zoomby: "1.2",
+            horizontalalignment: "left",
+            verticalalignment: "top",
+            defaultzoom: "fit",
+          },
+        },
+      });
+      store.setTaskData({ pages: ["p1.png", "p2.png", "p3.png"] });
+      store.annotation.image.afterAttach();
+      return store.annotation.image;
+    }
+
+    // what Image#updateImageSize does when the current image has loaded
+    function loadCurrent(image, naturalWidth, naturalHeight) {
+      const entity = image.currentImageEntity;
+      entity.setDownloading(false);
+      entity.setDownloaded(true);
+      entity.setImageLoaded(true);
+      image.setContainerRef({ offsetWidth: 1000, offsetHeight: 700 });
+      // the <img> onLoad handler: sets natural size, fits, then applies the carried view
+      image.updateImageSize({ target: { naturalWidth, naturalHeight } });
+    }
+
+    const screenScale = (image) => image.stageZoom * image.zoomScale;
+    const centre = (image) => image.captureCurrentView();
+
+    it("carries zoom and position to the next image of the same size and back", () => {
+      const image = createMultiImage();
+      expect(image.multiImage).toBe(true);
+      loadCurrent(image, 1200, 800);
+      image.handleZoom(1, { x: 300, y: 200 });
+      image.handleZoom(1, { x: 300, y: 200 });
+      image.handleZoom(1, { x: 300, y: 200 });
+      const before = { scale: screenScale(image), pos: [image.zoomingPositionX, image.zoomingPositionY] };
+      expect(before.scale).toBeGreaterThan(image.maxScale);
+
+      image.setCurrentImage(1);
+      loadCurrent(image, 1200, 800);
+      expect(screenScale(image)).toBeCloseTo(before.scale, 6);
+      expect(image.zoomingPositionX).toBeCloseTo(before.pos[0], 6);
+      expect(image.zoomingPositionY).toBeCloseTo(before.pos[1], 6);
+
+      image.setCurrentImage(0);
+      loadCurrent(image, 1200, 800);
+      expect(screenScale(image)).toBeCloseTo(before.scale, 6);
+      expect(image.zoomingPositionX).toBeCloseTo(before.pos[0], 6);
+    });
+
+    it("keeps the zoom scale and the relative centre on an image of another size, within bounds", () => {
+      const image = createMultiImage();
+      loadCurrent(image, 1200, 800);
+      image.handleZoom(1, { x: 500, y: 350 });
+      image.handleZoom(1, { x: 500, y: 350 });
+      const before = { scale: screenScale(image), view: centre(image) };
+
+      image.setCurrentImage(2);
+      loadCurrent(image, 800, 1000);
+      expect(screenScale(image)).toBeCloseTo(before.scale, 6);
+      const after = centre(image);
+      expect(after.centerX).toBeCloseTo(before.view.centerX, 6);
+      expect(after.centerY).toBeCloseTo(before.view.centerY, 6);
+      // setZoomPosition's bounds: the image still covers the viewport
+      expect(image.zoomingPositionX).toBeLessThanOrEqual(0);
+      expect(image.zoomingPositionY).toBeLessThanOrEqual(0);
+    });
+
+    it("clamps the position when the carried centre would show area outside the next image", () => {
+      const image = createMultiImage();
+      loadCurrent(image, 1200, 800);
+      // zoom into the far right edge of a wide image
+      for (let i = 0; i < 4; i++) image.handleZoom(1, { x: image.canvasSize.width, y: 0 });
+      image.setCurrentImage(2);
+      loadCurrent(image, 800, 1000);
+      const minX = image.canvasSize.width - image.stageComponentSize.width * image.zoomScale;
+      expect(image.zoomingPositionX).toBeGreaterThanOrEqual(minX - 1e-6);
+      expect(image.zoomingPositionX).toBeLessThanOrEqual(0);
+    });
+
+    it("an image at fit (e.g. after the fit button) is followed by a fitted image", () => {
+      const image = createMultiImage();
+      loadCurrent(image, 1200, 800);
+      image.handleZoom(1);
+      image.sizeToFit();
+      image.setCurrentImage(1);
+      expect(image.carriedView).toBeNull();
+      loadCurrent(image, 1200, 800);
+      expect(image.currentZoom).toBe(1);
+      expect(image.zoomingPositionX).toBe(0);
+    });
+
+    it("keeps the old behaviour (fit on every image) with the flag off", () => {
+      const image = createMultiImage(false);
+      loadCurrent(image, 1200, 800);
+      image.handleZoom(1);
+      image.handleZoom(1);
+      image.setCurrentImage(1);
+      expect(image.carriedView).toBeNull();
+      loadCurrent(image, 1200, 800);
+      expect(image.currentZoom).toBe(1);
+    });
+
+    it("re-applies the carried view when the container settles right after the page change", () => {
+      const image = createMultiImage();
+      loadCurrent(image, 1200, 800);
+      image.handleZoom(1, { x: 300, y: 200 });
+      image.handleZoom(1, { x: 300, y: 200 });
+      const scale = screenScale(image);
+      image.setCurrentImage(1);
+      loadCurrent(image, 1200, 800);
+      // the container is measured once more, slightly narrower (layout settling)
+      image.onResize(960, 700, true);
+      expect(screenScale(image)).toBeCloseTo(scale, 6);
+      // after a user zoom, resizes behave as before again (no re-apply)
+      image.handleZoom(1);
+      const userScale = screenScale(image);
+      image.onResize(1000, 700, true);
+      expect(screenScale(image)).not.toBeCloseTo(scale, 3);
+      expect(userScale).toBeGreaterThan(scale);
+    });
+  });
+
   describe("getInertialZoom", () => {
     it("returns clamped zoom based on wheel delta and settings.invertedZoom", () => {
       const store = createStore();
