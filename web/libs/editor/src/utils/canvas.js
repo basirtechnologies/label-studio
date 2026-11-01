@@ -280,16 +280,27 @@ function Region2RLE(region) {
  * @return {string} A CSS-compatible string for setting the custom cursor,
  * including a data URL with the cursor image and its hotspot coordinates.
  */
+// Browsers ignore CSS cursor images larger than 128x128 px and fall back to the default cursor
+const MAX_CSS_CURSOR_SIZE = 128;
+// The circle outline (3px) plus 1px reserve on each side of the diameter
+const BRUSH_CURSOR_PADDING = (3 + 1) * 2;
+
+/**
+ * Whether a brush cursor circle of this diameter (CSS px) fits into a CSS cursor image.
+ * Bigger circles have to be drawn on the canvas instead (see BrushCursorLayer in ImageView).
+ * @param {number} diameter
+ */
+function brushCursorFitsCss(diameter) {
+  return Math.ceil(diameter) + BRUSH_CURSOR_PADDING <= MAX_CSS_CURSOR_SIZE;
+}
+
 function createBrushSizeCircleCursor(size) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   const strokeWidth = 3;
-  const marginReserve = 1;
-  const canvasOffset = strokeWidth + marginReserve;
-  const canvasPadding = canvasOffset * 2;
-  // Calculate the minimum canvas size needed:
-  // diameter + (stroke width + reserve) for padding on both sides
-  const canvasSize = size + canvasPadding;
+  // Canvas sizes are integers: round the diameter up instead of letting the canvas truncate it,
+  // so the drawn circle keeps its exact (fractional) diameter in the middle of the image
+  const canvasSize = Math.ceil(size) + BRUSH_CURSOR_PADDING;
   // Position the circle in the center of the canvas
   const circlePos = canvasSize / 2;
   const circleRadius = size / 2;
@@ -312,7 +323,9 @@ function createBrushSizeCircleCursor(size) {
   ctx.stroke();
 
   const base64 = canvas.toDataURL();
-  return `url('${base64}') ${circlePos} ${circlePos}, auto`;
+  // the hotspot must be an integer
+  const hotspot = Math.floor(circlePos);
+  return `url('${base64}') ${hotspot} ${hotspot}, auto`;
 }
 
 /**
@@ -509,6 +522,8 @@ export default {
   mask2DataURL,
   maskDataURL2Image,
   createBrushSizeCircleCursor,
+  brushCursorFitsCss,
+  MAX_CSS_CURSOR_SIZE,
   labelToSVG,
   trim,
 };
