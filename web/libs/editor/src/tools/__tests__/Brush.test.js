@@ -163,13 +163,50 @@ describe("Brush tool", () => {
       expect(controls[0].key).toBe("brush-size");
     });
 
-    it("controls Range onChange updates strokeWidth via setStroke", () => {
+    it("controls Range onChange (a step index) updates strokeWidth via setStroke", () => {
       const tool = createBrush();
       const rangeControl = tool.controls[0];
       const onChange = rangeControl.props.onChange;
       expect(onChange).toBeDefined();
-      onChange(25);
-      expect(tool.strokeWidth).toBe(25);
+      onChange(7); // BRUSH_SIZE_STEPS[7] = 20
+      expect(tool.strokeWidth).toBe(20);
+    });
+
+    // DW-890: stepped size slider with a visible value
+    describe("stepped size slider", () => {
+      const STEPS = [1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50];
+
+      it("moves through the size steps one index at a time", () => {
+        const range = createBrush().controls[0];
+        expect(range.props.min).toBe(0);
+        expect(range.props.max).toBe(STEPS.length - 1);
+        expect(range.props.step).toBe(1);
+      });
+
+      it.each(STEPS.map((size, index) => [index, size]))("position %p sets size %p", (index, size) => {
+        const tool = createBrush();
+        tool.controls[0].props.onChange(index);
+        expect(tool.strokeWidth).toBe(size);
+        // the slider then sits on that step
+        expect(tool.controls[0].props.value).toBe(index);
+      });
+
+      it("shows the current size next to the slider", () => {
+        const tool = createBrush();
+        tool.setStroke(30);
+        const range = tool.controls[0];
+        expect(range.props.valueLabel(range.props.value)).toBe(30);
+        // while dragging, other positions show their step size
+        expect(range.props.valueLabel(2)).toBe(3);
+      });
+
+      it("a size that is not a step is shown as-is, at the nearest step", () => {
+        const tool = createBrush();
+        tool.setStroke(12); // e.g. a size set before steps existed
+        const range = tool.controls[0];
+        expect(range.props.value).toBe(5); // nearest step: 10
+        expect(range.props.valueLabel(range.props.value)).toBe(12);
+      });
     });
 
     it("extraShortcuts has decrease and increase tool shortcuts", () => {
