@@ -24,9 +24,25 @@ const renderItem = (element: string) =>
   );
 
 describe("HotkeyItem defaults (DW-891)", () => {
-  it("the eraser defaults to X", () => {
+  it("the eraser defaults to shift+E", () => {
     const { container } = renderItem("tool:eraser");
-    expect([...container.querySelectorAll("kbd")].map((k) => k.textContent)).toEqual(["X"]);
+    expect([...container.querySelectorAll("kbd")].map((k) => k.textContent)).toEqual(["shift", "E"]);
+  });
+
+  it("shift+E is not used by any other default", () => {
+    const normalize = (key: string) =>
+      key
+        .toLowerCase()
+        .split("+")
+        .map((part) => part.trim())
+        .sort()
+        .join("+");
+    const usesShiftE = getTypedDefaultHotkeys().filter((h) =>
+      [h.key, (h as { mac?: string }).mac].some(
+        (k) => typeof k === "string" && k.split(",").some((combo) => normalize(combo) === "e+shift"),
+      ),
+    );
+    expect(usesShiftE.map((h) => h.element)).toEqual(["tool:eraser"]);
   });
 
   it("the brush has no default key and says so", () => {

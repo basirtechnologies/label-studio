@@ -5,7 +5,10 @@ import { effectiveHotkeys, toEditorKeymap } from "./effectiveHotkeys";
 import { dropRetiredDefaults } from "./retiredDefaults";
 
 describe("dropRetiredDefaults", () => {
-  it("drops the old eraser (E) and brush (B) defaults, any case", () => {
+  it("drops the earlier eraser defaults (E, X) and the old brush default (B), any case", () => {
+    expect(dropRetiredDefaults({ "tools:tool:eraser": { key: "X", active: true } })).toEqual({});
+    expect(dropRetiredDefaults({ "tools:tool:eraser": { key: "x", active: true } })).toEqual({});
+
     expect(
       dropRetiredDefaults({
         "tools:tool:eraser": { key: "E", active: true },
@@ -37,7 +40,7 @@ describe("effectiveHotkeys with old defaults saved (DW-891)", () => {
     });
 
     const keymap = toEditorKeymap(effectiveHotkeys.getCustomHotkeys());
-    expect(keymap["tool:eraser"]).toBeUndefined(); // editor default X applies
+    expect(keymap["tool:eraser"]).toBeUndefined(); // editor default shift+E applies
     expect(keymap["tool:brush"]).toBeUndefined(); // editor default: no key
     expect(keymap["annotation:submit"]).toEqual({ key: "alt+enter", active: true });
     expect(window.APP_SETTINGS.user?.customHotkeys?.["tools:tool:eraser"]).toBeUndefined();

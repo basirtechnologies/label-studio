@@ -569,8 +569,9 @@ export const DEFAULT_HOTKEYS = [
     section: "tools",
     element: "tool:eraser",
     label: "Eraser Tool",
-    // DW-891: X, not E (E is a label key in our configs)
-    key: "X",
+    // DW-891: shift+E. Plain letters and digits are label keys in our configs (set in the config or
+    // auto-assigned by the editor from "1234567890qwetasdfgzxcvbyiopjklnm"), so E and X both clash.
+    key: "shift+E",
     description: "Select the eraser tool",
     active: true,
   },

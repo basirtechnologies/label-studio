@@ -189,9 +189,9 @@ describe("Hotkey Help customization link", () => {
     };
     const row = (label: string) => screen.getByText(label).parentElement?.parentElement as HTMLElement;
 
-    it("shows the eraser on X and the brush without a key", async () => {
+    it("shows the eraser on shift+E and the brush without a key", async () => {
       await openTools();
-      expect([...row("Eraser Tool").querySelectorAll("kbd")].map((k) => k.textContent)).toEqual(["X"]);
+      expect([...row("Eraser Tool").querySelectorAll("kbd")].map((k) => k.textContent)).toEqual(["shift", "E"]);
       expect(row("Brush Tool").querySelector("kbd")).toBeNull();
       expect(row("Brush Tool")).toHaveTextContent("Not set");
       expect(row("Brush Tool")).not.toHaveTextContent("Disabled");

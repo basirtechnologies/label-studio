@@ -37,6 +37,17 @@ describe("Hotkey config keys", () => {
     expect(Hotkey.isConfigKey("x")).toBe(false);
   });
 
+  it("auto-assigned label keys (makeComb) never take shift+e, even with 40 labels", () => {
+    for (let i = 0; i < 40; i++) {
+      const key = config.makeComb();
+      if (key) config.addKey(key, () => {});
+    }
+    expect(getConfigHotkeys()).toHaveLength(33); // 1-0 and the 23 letters, then no key
+    expect(Hotkey.isConfigKey("x")).toBe(true);
+    expect(Hotkey.isConfigKey("e")).toBe(true);
+    expect(Hotkey.isConfigKey("shift+E")).toBe(false);
+  });
+
   it("the editor's annotation hotkeys use the config namespace", () => {
     expect(Hotkey.CONFIG_NAMESPACE).toBe("Annotations");
   });

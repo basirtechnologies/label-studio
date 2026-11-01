@@ -10,7 +10,7 @@
  * the config's (selects the label) and the toolbar's (selects the tool).
  */
 import { act, render } from "@testing-library/react";
-import { setConfigHotkeys } from "@humansignal/core/lib/utils/configHotkeys";
+import { normalizeHotkeyCombo, setConfigHotkeys, splitHotkeyCombos } from "@humansignal/core/lib/utils/configHotkeys";
 import defaultKeymap from "../../../core/settings/keymap.json";
 import { useToolExtraShortcuts, useToolShortcut } from "../useToolHotkeys";
 
@@ -88,16 +88,18 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
     await act(async () => setConfigHotkeys([]));
   });
 
-  it("defaults: the eraser is on X and the brush has no key", () => {
-    expect(defaultKeymap["tool:eraser"].key).toBe("X");
+  it("defaults: the eraser is on shift+E and the brush has no key", () => {
+    expect(defaultKeymap["tool:eraser"].key).toBe("shift+E");
     expect(defaultKeymap["tool:brush"].key).toBeNull();
   });
 
-  it("x is not used by any other default hotkey", () => {
-    const usesX = Object.entries(defaultKeymap).filter(([, { key, mac }]) =>
-      [key, mac].some((k) => typeof k === "string" && k.split(",").some((c) => c.trim().toLowerCase() === "x")),
+  it("shift+e is not used by any other default hotkey", () => {
+    const usesShiftE = Object.entries(defaultKeymap).filter(([, { key, mac }]) =>
+      [key, mac].some(
+        (k) => typeof k === "string" && splitHotkeyCombos(k).some((combo) => normalizeHotkeyCombo(combo) === "shift+e"),
+      ),
     );
-    expect(usesX.map(([name]) => name)).toEqual(["tool:eraser"]);
+    expect(usesShiftE.map(([name]) => name)).toEqual(["tool:eraser"]);
   });
 
   it("the brush tool registers no key and shows none", async () => {
@@ -108,7 +110,7 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
     unmount();
   });
 
-  it("BrushLabels on e and b: e and b select the labels, no tool changes; x selects the eraser", async () => {
+  it("BrushLabels on e and b: e and b select the labels, no tool changes; shift+e selects the eraser", async () => {
     await loadConfig({ e: "brass_knuckles", b: "metal_gun" });
     const { container, unmount } = renderTools(["tool:brush", "tool:eraser"]);
     await flush();
@@ -118,9 +120,29 @@ describe("DW-891: label hotkeys win over tool hotkeys", () => {
     expect(selectedLabels).toEqual(["brass_knuckles", "metal_gun"]);
     expect(toolClicks).toEqual([]);
 
-    press("x");
+    press("shift+e");
     expect(toolClicks).toEqual(["tool:eraser"]);
-    expect(shownKey(container, "tool:eraser")).toBe("X");
+    expect(selectedLabels).toEqual(["brass_knuckles", "metal_gun"]);
+    expect(shownKey(container, "tool:eraser")).toBe("shift+E");
+    unmount();
+  });
+
+  it("40 labels without hotkeys (auto-assigned 1-0, q...m): shift+e still selects the eraser", async () => {
+    // the editor gives labels without a hotkey the next free key of Hotkey.makeComb, one key each
+    const autoKeys = "1234567890qwetasdfgzxcvbyiopjklnm".split("");
+    const labelKeys = Object.fromEntries(autoKeys.map((key, i) => [key, `label_${i + 1}`]));
+    await loadConfig(labelKeys); // labels 34-40 get no key
+    const { container, unmount } = renderTools(["tool:brush", "tool:eraser"]);
+    await flush();
+
+    press("x");
+    press("e");
+    expect(selectedLabels).toEqual([labelKeys.x, labelKeys.e]);
+    expect(toolClicks).toEqual([]);
+
+    press("shift+e");
+    expect(toolClicks).toEqual(["tool:eraser"]);
+    expect(shownKey(container, "tool:eraser")).toBe("shift+E");
     unmount();
   });
 
