@@ -68,7 +68,8 @@ export const FF_MODAL_WINDOW_APP_CHROME = "fflag_feat_front_fit_1559_modal_windo
 
 /**
  * Basir DW-889: keep zoom and position when paging between the images of a multi-image Image tag
- * (`valueList`). On by default via label_studio/feature_flags.json.
+ * (`valueList`). On by default (checked with isFFDefaultOn); turn it off with the env var
+ * fflag_feat_front_dw_889_keep_zoom_between_images_short=false on the Label Studio server.
  */
 export const FF_KEEP_ZOOM_BETWEEN_IMAGES = "fflag_feat_front_dw_889_keep_zoom_between_images_short";
 
@@ -95,6 +96,15 @@ export function isFF(id: string) {
     return featureFlags[id] === true;
   }
   return window.APP_SETTINGS?.feature_flags_default_value === true;
+}
+
+/**
+ * Like isFF, but for flags that are on unless explicitly set to false (e.g. by a `fflag_...=false` env var,
+ * which the server passes to the frontend). Used for Basir changes that should default to on.
+ */
+export function isFFDefaultOn(id: string) {
+  const featureFlags = getFeatureFlags();
+  return id in featureFlags ? featureFlags[id] !== false : true;
 }
 
 Object.assign(window, { getFeatureFlags, isFF });

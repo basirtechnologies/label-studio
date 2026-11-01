@@ -16,7 +16,7 @@ import { RectRegionModel } from "../../../regions/RectRegion";
 import * as Tools from "../../../tools";
 import ToolsManager from "../../../tools/Manager";
 import { parseValue } from "../../../utils/data";
-import { FF_DEV_3391, FF_KEEP_ZOOM_BETWEEN_IMAGES, isFF } from "../../../utils/feature-flags";
+import { FF_DEV_3391, FF_KEEP_ZOOM_BETWEEN_IMAGES, isFFDefaultOn } from "../../../utils/feature-flags";
 import { guidGenerator } from "../../../utils/unique";
 import { clamp, isDefined } from "../../../utils/utilities";
 import ObjectBase from "../Base";
@@ -787,7 +787,12 @@ const Model = types
 
       // DW-889: remember the zoom/position of the image being left, so the next one opens the same way.
       // Only from a loaded image: paging on before an image loaded keeps the view carried so far.
-      if (self.multiImage && isFF(FF_KEEP_ZOOM_BETWEEN_IMAGES) && self.currentImageEntity && self.imageIsLoaded) {
+      if (
+        self.multiImage &&
+        isFFDefaultOn(FF_KEEP_ZOOM_BETWEEN_IMAGES) &&
+        self.currentImageEntity &&
+        self.imageIsLoaded
+      ) {
         self.carriedView = self.captureCurrentView();
       }
 
@@ -816,7 +821,7 @@ const Model = types
      */
     applyCarriedView() {
       const view = self.carriedView;
-      if (!view || !self.multiImage || !isFF(FF_KEEP_ZOOM_BETWEEN_IMAGES)) return;
+      if (!view || !self.multiImage || !isFFDefaultOn(FF_KEEP_ZOOM_BETWEEN_IMAGES)) return;
 
       self.setZoom(editorZoomForScale(view.scale, self.maxScale));
       self.updateImageAfterZoom();

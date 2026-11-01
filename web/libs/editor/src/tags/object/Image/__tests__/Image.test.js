@@ -806,8 +806,12 @@ describe("Image model", () => {
   describe("keep zoom between images (multi-image)", () => {
     const FLAG = "fflag_feat_front_dw_889_keep_zoom_between_images_short";
 
-    function createMultiImage(flagOn = true) {
-      window.APP_SETTINGS = { ...(window.APP_SETTINGS ?? {}), feature_flags: { [FLAG]: flagOn } };
+    // flag: true / false, or undefined = not sent by the server (default: on)
+    function createMultiImage(flag) {
+      window.APP_SETTINGS = {
+        ...(window.APP_SETTINGS ?? {}),
+        feature_flags: flag === undefined ? {} : { [FLAG]: flag },
+      };
       const store = createStore({
         annotation: {
           toNames: new Map(),
@@ -906,6 +910,15 @@ describe("Image model", () => {
       loadCurrent(image, 1200, 800);
       expect(image.currentZoom).toBe(1);
       expect(image.zoomingPositionX).toBe(0);
+    });
+
+    it("is on when the server doesn't send the flag", () => {
+      const image = createMultiImage(undefined);
+      loadCurrent(image, 1200, 800);
+      image.handleZoom(1);
+      image.handleZoom(1);
+      image.setCurrentImage(1);
+      expect(image.carriedView).not.toBeNull();
     });
 
     it("keeps the old behaviour (fit on every image) with the flag off", () => {
