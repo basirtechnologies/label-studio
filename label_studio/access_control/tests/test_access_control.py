@@ -531,3 +531,21 @@ def test_page_tells_the_ui_the_role(world):
     assert '"can_manage": false' in page and '"role": "labeler"' in page
     page = session_client(world.user(role='admin')).get('/projects/').content.decode()
     assert '"can_manage": true' in page
+
+
+@pytest.mark.parametrize('auth', ['session', 'token'])
+def test_non_admin_sending_access_groups_with_access_control_off_is_accepted(world, auth):
+    """The Label Server sends access_groups on every project create, also with the shared accounts' tokens (no LS
+    role) before access control is switched on: that must neither fail (400/403) nor be ignored."""
+    shared = world.user(is_superuser=True)  # like male@mail.com before the rollout: no LS role
+    client = CLIENTS[auth](shared)
+
+    response = client.post('/api/projects/', {'title': 'Scans from DWH', 'access_groups': [MALE]}, format='json')
+    assert response.status_code == 201, response.content
+    project = Project.objects.get(id=response.json()['id'])
+    assert list(project.access_groups.values_list('name', flat=True)) == [MALE]
+    assert response.json()['access_groups'] == [MALE]
+
+    response = client.patch(f'/api/projects/{project.id}/', {'access_groups': [MALE, FEMALE]}, format='json')
+    assert response.status_code == 200, response.content
+    assert sorted(project.access_groups.values_list('name', flat=True)) == [FEMALE, MALE]
