@@ -264,6 +264,7 @@ INSTALLED_APPS = [
     'jwt_auth',
     'session_policy',
     'access_control',  # Basir DW-907: access groups and LS roles
+    'keycloak_auth',  # Basir DW-908: Keycloak (OIDC) login
 ]
 
 MIDDLEWARE = [
@@ -275,6 +276,8 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'core.middleware.XApiKeySupportMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Basir DW-908: ends email/password sessions outside LOCAL_LOGIN_ALLOWED_EMAILS while OIDC_ENABLED
+    'keycloak_auth.middleware.LocalSessionAllowListMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'core.middleware.NoindexUrlMiddleware',
     'core.middleware.CommonMiddlewareAppendSlashWithoutRedirect',  # instead of 'CommonMiddleware'
@@ -341,7 +344,11 @@ ALLOWED_HOSTS = get_env_list('ALLOWED_HOSTS', default=['*'])
 AUTH_USER_MODEL = 'users.User'
 AUTHENTICATION_BACKENDS = [
     'rules.permissions.ObjectPermissionBackend',
+    # Basir DW-908: while OIDC_ENABLED, refuses email/password logins outside LOCAL_LOGIN_ALLOWED_EMAILS
+    'keycloak_auth.backends.LocalLoginAllowListBackend',
     'django.contrib.auth.backends.ModelBackend',
+    # Basir DW-908: "Log in with Keycloak" (does nothing while OIDC_ENABLED is off)
+    'keycloak_auth.backends.KeycloakOIDCBackend',
 ]
 USE_USERNAME_FOR_LOGIN = False
 
@@ -647,6 +654,36 @@ SSRF_PROTECTION_ENABLED = get_bool_env('SSRF_PROTECTION_ENABLED', True)
 # Basir DW-907: device-based access control. Off = upstream behaviour. On = users whose LS role is not "admin"
 # only see projects sharing an access group with them, and admin-only operations answer 403 (access_control app).
 BASIR_ACCESS_CONTROL_ENABLED = get_bool_env('BASIR_ACCESS_CONTROL_ENABLED', False)
+
+# Basir DW-908: Keycloak (OIDC Authorization Code flow, mozilla-django-oidc). Off by default = upstream login.
+OIDC_ENABLED = get_bool_env('OIDC_ENABLED', False)
+OIDC_RP_CLIENT_ID = get_env('OIDC_RP_CLIENT_ID', '')
+OIDC_RP_CLIENT_SECRET = get_env('OIDC_RP_CLIENT_SECRET', '')
+# realm URL as the browser reaches it, e.g. http://keycloak.example:9090/realms/data_service
+OIDC_OP_BASE_URL = (get_env('OIDC_OP_BASE_URL', '') or '').rstrip('/')
+# realm URL as this container reaches it (token, userinfo, JWKS); defaults to OIDC_OP_BASE_URL
+OIDC_OP_INTERNAL_BASE_URL = (get_env('OIDC_OP_INTERNAL_BASE_URL', '') or OIDC_OP_BASE_URL).rstrip('/')
+OIDC_OP_AUTHORIZATION_ENDPOINT = f'{OIDC_OP_BASE_URL}/protocol/openid-connect/auth'
+OIDC_OP_LOGOUT_ENDPOINT = f'{OIDC_OP_BASE_URL}/protocol/openid-connect/logout'
+OIDC_OP_TOKEN_ENDPOINT = f'{OIDC_OP_INTERNAL_BASE_URL}/protocol/openid-connect/token'
+OIDC_OP_USER_ENDPOINT = f'{OIDC_OP_INTERNAL_BASE_URL}/protocol/openid-connect/userinfo'
+OIDC_OP_JWKS_ENDPOINT = f'{OIDC_OP_INTERNAL_BASE_URL}/protocol/openid-connect/certs'
+OIDC_VERIFY_SSL = get_bool_env('OIDC_VERIFY_SSL', True)
+OIDC_RP_SIGN_ALGO = 'RS256'
+OIDC_RP_SCOPES = get_env('OIDC_RP_SCOPES', 'openid email profile')
+OIDC_USE_PKCE = True
+OIDC_STORE_ID_TOKEN = True  # id_token_hint for Keycloak's end-session endpoint
+OIDC_TIMEOUT = int(get_env('OIDC_TIMEOUT', 10))
+OIDC_CALLBACK_CLASS = 'keycloak_auth.views.KeycloakCallbackView'
+OIDC_AUTHENTICATE_CLASS = 'keycloak_auth.views.KeycloakLoginView'
+LOGIN_REDIRECT_URL_FAILURE = '/user/login/'
+OIDC_ROLE_ADMIN = get_env('OIDC_ROLE_ADMIN', 'ls-admin')
+OIDC_ROLE_LABELER = get_env('OIDC_ROLE_LABELER', 'ls-labeler')
+OIDC_GROUP_PREFIX = get_env('OIDC_GROUP_PREFIX', 'ls-')
+# the single organization Keycloak users join on their first login (default: the only organization, if just one)
+BASIR_DEFAULT_ORGANIZATION_ID = int(get_env('BASIR_DEFAULT_ORGANIZATION_ID', 0) or 0) or None
+# while OIDC_ENABLED, only these accounts may use the email/password form (comma-separated)
+LOCAL_LOGIN_ALLOWED_EMAILS = [email.strip().lower() for email in get_env_list('LOCAL_LOGIN_ALLOWED_EMAILS') if email.strip()]
 USE_DEFAULT_BANNED_SUBNETS = get_bool_env('USE_DEFAULT_BANNED_SUBNETS', True)
 USER_ADDITIONAL_BANNED_SUBNETS = get_env_list('USER_ADDITIONAL_BANNED_SUBNETS', default=[])
 
@@ -815,7 +852,8 @@ DATA_MANAGER_CHECK_ACTION_PERMISSION = 'access_control.permissions.check_action_
 DATA_MANAGER_LIST_FILTER_MAX_VALUES = int(get_env('DATA_MANAGER_LIST_FILTER_MAX_VALUES', 5000))
 BULK_UPDATE_IS_LABELED = 'tasks.functions.bulk_update_is_labeled_by_overlap'
 BULK_CREATE_ANNOTATIONS_FSM_INITIALIZER = None
-USER_LOGIN_FORM = 'users.forms.LoginForm'
+# Basir DW-908: refuses emails outside LOCAL_LOGIN_ALLOWED_EMAILS while OIDC_ENABLED, with a clear message
+USER_LOGIN_FORM = 'keycloak_auth.forms.LoginForm'
 PROJECT_MIXIN = 'projects.mixins.ProjectMixin'
 TASK_MIXIN = 'tasks.mixins.TaskMixin'
 LSE_PROJECT = None

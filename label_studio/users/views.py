@@ -11,6 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render, reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import csrf_exempt
+from keycloak_auth.views import keycloak_logout_url
 from organizations.forms import OrganizationSignupForm
 from organizations.models import Organization
 from rest_framework.authtoken.models import Token
@@ -24,7 +25,11 @@ logger = logging.getLogger()
 
 @login_required
 def logout(request):
+    # Basir DW-908: a Keycloak session also ends at Keycloak (end-session endpoint, then back to the login page)
+    keycloak_url = keycloak_logout_url(request)
     auth.logout(request)
+    if keycloak_url:
+        return redirect(keycloak_url)
 
     if settings.LOGOUT_REDIRECT_URL:
         return redirect(settings.LOGOUT_REDIRECT_URL)

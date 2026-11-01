@@ -105,6 +105,7 @@ urlpatterns = [
     re_path(r'^', include('jwt_auth.urls')),
     re_path(r'^', include('session_policy.urls')),
     re_path(r'^', include('access_control.urls')),  # Basir DW-907
+    re_path(r'^', include('keycloak_auth.urls')),  # Basir DW-908
     path('docs/api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('docs/api/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('docs/api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),

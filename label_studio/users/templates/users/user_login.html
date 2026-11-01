@@ -1,6 +1,7 @@
 {% extends 'users/user_base.html' %}
 
 {% block user_content %}
+  {% include 'keycloak_auth/login_options.html' %}
   <form id="login-form" action="{% url 'user-login' %}?next={{ next }}" method="post">
     {% csrf_token %}
     <p><input type="text" class="lsf-input-ls" name="email" id="email" placeholder="Email" value="{{ form.data.email }}"></p>

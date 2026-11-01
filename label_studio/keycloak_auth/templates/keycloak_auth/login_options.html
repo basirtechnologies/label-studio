@@ -1,0 +1,14 @@
+{% comment %}Basir DW-908: Keycloak login button and Keycloak login errors, on the login page.{% endcomment %}
+{% if messages %}
+  {% for message in messages %}
+    <p class="error" data-testid="login-message">{{ message }}</p>
+  {% endfor %}
+{% endif %}
+{% if settings.OIDC_ENABLED %}
+  <form class="keycloak-login" action="{% url 'oidc_authentication_init' %}" method="get" style="margin: 16px 0 24px;">
+    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+    <button type="submit" class="login-button lsf-button-ls lsf-button-ls_look_primary" style="width: 100%;"
+            data-testid="keycloak-login">Log in with Keycloak</button>
+    <p style="text-align: center; margin: 12px 0 0; opacity: .7;">Email and password: local admin accounts only</p>
+  </form>
+{% endif %}
