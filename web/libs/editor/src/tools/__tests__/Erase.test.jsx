@@ -97,16 +97,28 @@ describe("Erase tool", () => {
     expect(controls.length).toBeGreaterThan(0);
   });
 
-  it("extraShortcuts has tool:decrease-tool and tool:increase-tool", () => {
+  // DW-891: "[" / "]" move the eraser through the same steps as the slider (DW-890)
+  it("extraShortcuts move the eraser size one step down / up", () => {
     const tool = createTool({ strokeWidth: 20 });
-    expect(tool.extraShortcuts["tool:decrease-tool"]).toBeDefined();
-    expect(tool.extraShortcuts["tool:increase-tool"]).toBeDefined();
-    const [, decreaseFn] = tool.extraShortcuts["tool:decrease-tool"];
-    const [, increaseFn] = tool.extraShortcuts["tool:increase-tool"];
+    const [decreaseLabel, decreaseFn] = tool.extraShortcuts["tool:decrease-tool"];
+    const [increaseLabel, increaseFn] = tool.extraShortcuts["tool:increase-tool"];
+    expect(decreaseLabel).toBe("Decrease size");
+    expect(increaseLabel).toBe("Increase size");
     decreaseFn();
-    expect(tool.strokeWidth).toBeLessThanOrEqual(20);
+    expect(tool.strokeWidth).toBe(15);
     increaseFn();
-    expect(tool.strokeWidth).toBeGreaterThanOrEqual(1);
+    increaseFn();
+    expect(tool.strokeWidth).toBe(30);
+    expect(tool.controls[0].props.value).toBe(8);
+  });
+
+  it("extraShortcuts stop at the eraser's smallest and biggest step", () => {
+    const tool = createTool({ strokeWidth: 1 });
+    tool.extraShortcuts["tool:decrease-tool"][1]();
+    expect(tool.strokeWidth).toBe(1);
+    tool.setStroke(50);
+    tool.extraShortcuts["tool:increase-tool"][1]();
+    expect(tool.strokeWidth).toBe(50);
   });
 
   it("afterUpdateSelected calls updateCursor", () => {

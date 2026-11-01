@@ -153,4 +153,22 @@ describe("Hotkey Help customization link", () => {
 
     expect((await screen.findByText("Submit Annotation")).parentElement?.parentElement).toHaveTextContent("shiftenter");
   });
+
+  // DW-891: the brush/eraser size shortcuts are listed in the Tools section (opened from the labeling menubar)
+  it("lists the brush/eraser size shortcuts in the Tools section", async () => {
+    window.history.pushState({}, "", "/projects/123/data?task=1");
+    window.APP_SETTINGS = {
+      ...window.APP_SETTINGS,
+      user: { ...window.APP_SETTINGS.user, customHotkeys: {} },
+      editor_keymap: {},
+    };
+    effectiveHotkeys.apply({ account: {} });
+
+    openModal = openHotkeyHelp(["annotation", "regions", "tools"]);
+
+    const smaller = (await screen.findByText("Decrease Brush/Eraser Size")).parentElement?.parentElement;
+    const bigger = (await screen.findByText("Increase Brush/Eraser Size")).parentElement?.parentElement;
+    expect(smaller).toHaveTextContent("[");
+    expect(bigger).toHaveTextContent("]");
+  });
 });
