@@ -549,7 +549,8 @@ export const DEFAULT_HOTKEYS = [
     section: "tools",
     element: "tool:brush",
     label: "Brush Tool",
-    key: "B",
+    // DW-891: no default key (B is a label key in our configs); selecting a brush label selects the brush
+    key: "",
     description: "Select the brush tool",
     active: true,
   },
@@ -568,27 +569,9 @@ export const DEFAULT_HOTKEYS = [
     section: "tools",
     element: "tool:eraser",
     label: "Eraser Tool",
-    key: "E",
+    // DW-891: X, not E (E is a label key in our configs)
+    key: "X",
     description: "Select the eraser tool",
-    active: true,
-  },
-  // DW-891: size shortcuts of the active brush or eraser (same steps as the size slider)
-  {
-    id: 5601,
-    section: "tools",
-    element: "tool:decrease-tool",
-    label: "Decrease Brush/Eraser Size",
-    key: "[",
-    description: "Make the active brush or eraser one size smaller",
-    active: true,
-  },
-  {
-    id: 5602,
-    section: "tools",
-    element: "tool:increase-tool",
-    label: "Increase Brush/Eraser Size",
-    key: "]",
-    description: "Make the active brush or eraser one size bigger",
     active: true,
   },
   {
@@ -668,18 +651,19 @@ export const DEFAULT_HOTKEYS = [
     id: 6700,
     section: "tools",
     element: "tool:decrease-tool",
-    label: "Decrease Tool Size",
+    // DW-891: one size step down for the active brush or eraser (same steps as the size slider)
+    label: "Decrease Brush/Eraser Size",
     key: "[",
-    description: "Decrease tool size",
+    description: "Make the active brush or eraser one size smaller",
     active: true,
   },
   {
     id: 6800,
     section: "tools",
     element: "tool:increase-tool",
-    label: "Increase Tool Size",
+    label: "Increase Brush/Eraser Size",
     key: "]",
-    description: "Increase tool size",
+    description: "Make the active brush or eraser one size bigger",
     active: true,
   },
 

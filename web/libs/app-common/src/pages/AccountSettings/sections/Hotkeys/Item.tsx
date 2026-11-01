@@ -194,7 +194,11 @@ export const HotkeyItem = ({ hotkey, onEdit, isEditing, onSave, onCancel, onTogg
           className="flex items-center gap-2 cursor-pointer hover:opacity-80 hover:bg-primary-emphasis-subtle px-base py-base rounded-small"
           onClick={handleEdit}
         >
-          <KeyboardKey>{hotkey.key}</KeyboardKey>
+          {hotkey.key ? (
+            <KeyboardKey>{hotkey.key}</KeyboardKey>
+          ) : (
+            <span className="text-sm text-neutral-content-subtler">Not set</span>
+          )}
         </div>
       </Tooltip>
     </div>

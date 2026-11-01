@@ -7,6 +7,7 @@ import Hint from "../components/Hint/Hint";
 import { cn } from "../utils/bem";
 import { isDefined, isMacOS } from "../utils/utilities";
 import defaultKeymap from "./settings/keymap.json";
+import { isConfigHotkey, setConfigHotkeys } from "@humansignal/core/lib/utils/configHotkeys";
 
 type Keymap = typeof defaultKeymap;
 
@@ -50,6 +51,8 @@ type HotkeyScopes = {
 
 const DEFAULT_SCOPE = "__main__";
 const INPUT_SCOPE = "__input__";
+// DW-891: namespace of the labeling config's own hotkeys (Annotation#setupHotKeys). Its keys win over tool hotkeys.
+const CONFIG_NAMESPACE = "Annotations";
 
 const _hotkeys_desc: { [key: string]: string } = {};
 const _namespaces: { [key: string]: HotkeyNamespace } = {};
@@ -171,7 +174,17 @@ export const Hotkey = (namespace = "global", description = "Hotkeys") => {
     _hotkeys_map = {};
   };
 
-  _destructors.push(unbind);
+  // DW-891: keep the shared list of config hotkeys up to date (read by tools and the keyboard help)
+  const publishConfigKeys = () => {
+    if (namespace === CONFIG_NAMESPACE) setConfigHotkeys(Object.keys(_hotkeys_map));
+  };
+
+  const unbindAndPublish = () => {
+    unbind();
+    publishConfigKeys();
+  };
+
+  _destructors.push(unbindAndPublish);
 
   return {
     applyAliases(key: string) {
@@ -218,6 +231,8 @@ export const Hotkey = (namespace = "global", description = "Hotkeys") => {
           addKeyHandlerRef(scope, keyName, handler);
           keymaster(keyName, scope, handler);
         });
+
+      publishConfigKeys();
     },
 
     /**
@@ -255,6 +270,7 @@ export const Hotkey = (namespace = "global", description = "Hotkeys") => {
 
         delete _hotkeys_map[keyName];
         delete _hotkeys_desc[keyName];
+        publishConfigKeys();
       }
     },
 
@@ -379,7 +395,7 @@ export const Hotkey = (namespace = "global", description = "Hotkeys") => {
      * Unbund all hotkeys
      */
     unbindAll() {
-      unbind();
+      unbindAndPublish();
     },
 
     /**
@@ -409,6 +425,14 @@ Hotkey.DEFAULT_SCOPE = DEFAULT_SCOPE;
 Hotkey.INPUT_SCOPE = INPUT_SCOPE;
 
 Hotkey.ALL_SCOPES = [DEFAULT_SCOPE, INPUT_SCOPE].join(",");
+
+Hotkey.CONFIG_NAMESPACE = CONFIG_NAMESPACE;
+
+/**
+ * DW-891: true when `key` (any of its comma-separated combinations, case-insensitive, same modifiers)
+ * is used by a hotkey of the labeling config that is loaded now. Such keys belong to the config.
+ */
+Hotkey.isConfigKey = (key?: string | null) => isConfigHotkey(key);
 
 Hotkey.keymap = { ...defaultKeymap } as Keymap;
 

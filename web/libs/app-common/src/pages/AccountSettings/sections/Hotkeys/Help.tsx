@@ -2,6 +2,11 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { modal } from "@humansignal/ui/lib/modal";
 import clsx from "clsx";
 import { getProjectHotkeysSettingsPath, getProjectIdFromPathname } from "@humansignal/core/lib/utils/hotkeysProject";
+import {
+  getConfigHotkeysVersion,
+  isConfigHotkey,
+  subscribeConfigHotkeys,
+} from "@humansignal/core/lib/utils/configHotkeys";
 import { effectiveHotkeys } from "../../hotkeys/effectiveHotkeys";
 import { KeyboardKey } from "./Key";
 // @ts-ignore
@@ -15,8 +20,11 @@ interface UrlMapping {
 }
 
 interface GroupedHotkeys {
-  [subgroup: string]: Hotkey[];
+  [subgroup: string]: HelpHotkey[];
 }
+
+/** DW-891: a tool hotkey whose key the loaded labeling config uses is not registered by the editor. */
+type HelpHotkey = Hotkey & { usedByConfig?: boolean };
 
 interface ModalReturn {
   close: () => void | Promise<void>;
@@ -29,31 +37,38 @@ interface HotkeyHelpModalProps {
 const getCurrentSections = (): Section[] => getHotkeySections({ includeDynamic: true });
 const urlMappings = URL_TO_SECTION_MAPPING as UrlMapping[];
 
-const resolveCurrentHotkeys = (): Hotkey[] => {
+const resolveHotkey = (hotkey: Hotkey): Hotkey => {
+  const lookupKey = `${hotkey.section}:${hotkey.element}`;
+  const customSetting = effectiveHotkeys.get(lookupKey);
+  if (customSetting) {
+    return {
+      ...hotkey,
+      key: customSetting.key ?? "",
+      active: customSetting.active ?? hotkey.active,
+      ...(customSetting.description && {
+        description: customSetting.description,
+      }),
+    };
+  }
+  return hotkey;
+};
+
+const resolveCurrentHotkeys = (): HelpHotkey[] => {
   const defaultHotkeys = getTypedDefaultHotkeys({ includeDynamic: true });
 
   return defaultHotkeys.map((hotkey: Hotkey) => {
-    const lookupKey = `${hotkey.section}:${hotkey.element}`;
-    const customSetting = effectiveHotkeys.get(lookupKey);
-    if (customSetting) {
-      return {
-        ...hotkey,
-        key: customSetting.key ?? "",
-        active: customSetting.active ?? hotkey.active,
-        ...(customSetting.description && {
-          description: customSetting.description,
-        }),
-      };
-    }
-    return hotkey;
+    const resolved = resolveHotkey(hotkey);
+    // DW-891: label hotkeys win over tool hotkeys on the same key
+    const usedByConfig = resolved.section === "tools" && resolved.active !== false && isConfigHotkey(resolved.key);
+    return usedByConfig ? { ...resolved, usedByConfig } : resolved;
   });
 };
 
-let helpSnapshot: Hotkey[] | null = null;
-let helpSnapshotVersion = -1;
+let helpSnapshot: HelpHotkey[] | null = null;
+let helpSnapshotVersion = "";
 
-const getHelpHotkeysSnapshot = (): Hotkey[] => {
-  const version = effectiveHotkeys.getVersion();
+const getHelpHotkeysSnapshot = (): HelpHotkey[] => {
+  const version = `${effectiveHotkeys.getVersion()}:${getConfigHotkeysVersion()}`;
   if (helpSnapshot && version === helpSnapshotVersion) return helpSnapshot;
   helpSnapshot = resolveCurrentHotkeys();
   helpSnapshotVersion = version;
@@ -66,13 +81,15 @@ const subscribeToHotkeyChanges = (listener: () => void): (() => void) => {
     helpSnapshot = null;
     listener();
   });
+  const unsubConfig = subscribeConfigHotkeys(listener);
   return () => {
     unsubEffective();
     unsubDynamic();
+    unsubConfig();
   };
 };
 
-const useCurrentHotkeys = (): Hotkey[] =>
+const useCurrentHotkeys = (): HelpHotkey[] =>
   useSyncExternalStore(subscribeToHotkeyChanges, getHelpHotkeysSnapshot, getHelpHotkeysSnapshot);
 
 const HotkeyHelpModal = ({ sectionsToShow }: HotkeyHelpModalProps) => {
@@ -95,10 +112,10 @@ const HotkeyHelpModal = ({ sectionsToShow }: HotkeyHelpModalProps) => {
       const section = currentSections.find((s: Section) => s.id === sectionId);
       if (!section) return null;
 
-      const sectionHotkeys = hotkeys.filter((h: Hotkey) => h.section === sectionId);
+      const sectionHotkeys = hotkeys.filter((h: HelpHotkey) => h.section === sectionId);
       if (sectionHotkeys.length === 0) return null;
 
-      const groupedHotkeys = sectionHotkeys.reduce((groups: GroupedHotkeys, hotkey: Hotkey) => {
+      const groupedHotkeys = sectionHotkeys.reduce((groups: GroupedHotkeys, hotkey: HelpHotkey) => {
         const subgroup = hotkey.subgroup || "default";
         if (!groups[subgroup]) {
           groups[subgroup] = [];
@@ -140,7 +157,7 @@ const HotkeyHelpModal = ({ sectionsToShow }: HotkeyHelpModalProps) => {
                     </div>
                   )}
 
-                  {groupedHotkeys[subgroup].map((hotkey: Hotkey) => (
+                  {groupedHotkeys[subgroup].map((hotkey: HelpHotkey) => (
                     <div key={`${section.id}-${hotkey.element}`} className="flex items-center justify-between py-2">
                       <div>
                         <div className="font-medium text-neutral-content">{hotkey.label}</div>
@@ -148,8 +165,21 @@ const HotkeyHelpModal = ({ sectionsToShow }: HotkeyHelpModalProps) => {
                           <div className="text-sm text-neutral-content-subtler">{hotkey.description}</div>
                         )}
                       </div>
-                      {hotkey.active === false || !hotkey.key ? (
+                      {hotkey.active === false ? (
                         <span className="text-sm text-neutral-content-subtler">Disabled</span>
+                      ) : !hotkey.key ? (
+                        <span className="text-sm text-neutral-content-subtler">Not set</span>
+                      ) : hotkey.usedByConfig ? (
+                        <span
+                          className="flex items-center gap-2 text-sm text-neutral-content-subtler"
+                          data-testid="hotkey-used-by-config"
+                          title="This key is a label hotkey in this project, so it selects the label instead"
+                        >
+                          <span className="line-through opacity-60">
+                            <KeyboardKey>{hotkey.key}</KeyboardKey>
+                          </span>
+                          Not available: used by a label in this project
+                        </span>
                       ) : (
                         <KeyboardKey>{hotkey.key}</KeyboardKey>
                       )}
