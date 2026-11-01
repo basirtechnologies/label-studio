@@ -348,24 +348,23 @@ const Model = types
           self.parent.stageHeight * self.parent.stageScale,
         );
         ctx.clip();
-        ctx.beginPath();
+        // the part of the path to draw now, in screen coordinates
+        const path = [];
         if (cachedPoints.length / 2 > 3) {
-          ctx.moveTo(...self.prepareCoords([lastPointX, lastPointY]));
-        } else if (cachedPoints.length === 0) {
-          ctx.moveTo(...self.prepareCoords([x, y]));
+          path.push(...self.prepareCoords([lastPointX, lastPointY]));
         } else {
-          ctx.moveTo(...self.prepareCoords([cachedPoints[0], cachedPoints[1]]));
-          for (let i = 0; i < cachedPoints.length / 2; i++) {
-            ctx.lineTo(...self.prepareCoords([cachedPoints[2 * i], cachedPoints[2 * i + 1]]));
+          for (let i = 0; i < cachedPoints.length; i += 2) {
+            path.push(...self.prepareCoords([cachedPoints[i], cachedPoints[i + 1]]));
           }
         }
-        ctx.lineTo(...self.prepareCoords([x, y]));
+        path.push(...self.prepareCoords([x, y]));
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
         ctx.lineWidth = pathPoints.strokeWidth * self.scaleX * self.parent.stageScale;
         ctx.strokeStyle = self.strokeColor;
         ctx.globalCompositeOperation = pathPoints.compositeOperation;
-        ctx.stroke();
+        // a click without movement is drawn as a dot instead of an (invisible) zero-length line
+        Canvas.strokeBrushPath(ctx, path);
         ctx.restore();
         lastPointX = x;
         lastPointY = y;
@@ -542,18 +541,14 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
 
   const drawLine = useCallback((ctx, { points, strokeWidth, strokeColor, compositeOperation }) => {
     ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(points[0], points[1]);
-    for (let i = 0; i < points.length / 2; i++) {
-      ctx.lineTo(points[2 * i], points[2 * i + 1]);
-    }
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.lineWidth = strokeWidth;
     ctx.strokeStyle = strokeColor;
     ctx.globalCompositeOperation = compositeOperation;
     ctx.globalAlpha = 1;
-    ctx.stroke();
+    // a click without movement is drawn as a dot instead of an (invisible) zero-length line
+    Canvas.strokeBrushPath(ctx, points);
     ctx.restore();
   }, []);
 

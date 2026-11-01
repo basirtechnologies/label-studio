@@ -556,6 +556,8 @@ describe("BrushRegion", () => {
         strokeStyle: "",
         globalCompositeOperation: "",
         stroke: mock(),
+        arc: mock(),
+        fill: mock(),
       };
       const mockRef = {
         getLayer: () => ({ canvas: { context: ctx } }),
@@ -576,6 +578,41 @@ describe("BrushRegion", () => {
       );
     });
 
+    // DW-887: mousedown + mouseup at the same spot (a click) shows a dot while drawing
+    it("preDraw shows a dot for a click without movement", () => {
+      ff.reset();
+      const ctx = {
+        save: mock(),
+        restore: mock(),
+        beginPath: mock(),
+        moveTo: mock(),
+        lineTo: mock(),
+        rect: mock(),
+        clip: mock(),
+        lineCap: "",
+        lineJoin: "",
+        lineWidth: 0,
+        strokeStyle: "",
+        fillStyle: "",
+        globalCompositeOperation: "",
+        stroke: mock(),
+        arc: mock(),
+        fill: mock(),
+      };
+      region.setLayerRef({
+        getLayer: () => ({ canvas: { context: ctx } }),
+        canvas: { _canvas: { style: {} }, context: ctx, width: 100, height: 100 },
+      });
+      region.beginPath({ type: "add", strokeWidth: 20 });
+      region.addPoint(10, 10); // mousedown
+      region.addPoint(10, 10); // mouseup at the same point
+      expect(ctx.arc).toHaveBeenCalled();
+      const [, , radius] = ctx.arc.mock.calls.at(-1);
+      expect(radius).toBe(ctx.lineWidth / 2);
+      expect(ctx.fill).toHaveBeenCalled();
+      expect(ctx.stroke).not.toHaveBeenCalled();
+    });
+
     it("preDraw uses cachedPoints when multiple points added", () => {
       ff.reset();
       const ctx = {
@@ -592,6 +629,8 @@ describe("BrushRegion", () => {
         strokeStyle: "",
         globalCompositeOperation: "",
         stroke: mock(),
+        arc: mock(),
+        fill: mock(),
       };
       const mockRef = {
         getLayer: () => ({ canvas: { context: ctx } }),

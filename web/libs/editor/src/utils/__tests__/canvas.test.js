@@ -90,6 +90,53 @@ describe("createBrushSizeCircleCursor", () => {
   });
 });
 
+describe("isSinglePointPath / strokeBrushPath (DW-887)", () => {
+  const makeCtx = () => ({
+    beginPath: mock(),
+    moveTo: mock(),
+    lineTo: mock(),
+    stroke: mock(),
+    arc: mock(),
+    fill: mock(),
+    lineWidth: 16,
+    strokeStyle: "rgba(255,0,0,0.7)",
+    fillStyle: "",
+  });
+
+  test("detects a path without length", () => {
+    expect(Canvas.isSinglePointPath([5, 7])).toBe(true);
+    expect(Canvas.isSinglePointPath([5, 7, 5, 7, 5, 7])).toBe(true);
+    expect(Canvas.isSinglePointPath([5, 7, 6, 7])).toBe(false);
+    expect(Canvas.isSinglePointPath([5, 7, 5, 7, 5, 8])).toBe(false);
+    expect(Canvas.isSinglePointPath([])).toBe(false);
+  });
+
+  test("paints a single point as a dot of the brush diameter", () => {
+    const ctx = makeCtx();
+    Canvas.strokeBrushPath(ctx, [30, 40, 30, 40]);
+    expect(ctx.arc).toHaveBeenCalledWith(30, 40, 8, 0, 2 * Math.PI);
+    expect(ctx.fillStyle).toBe("rgba(255,0,0,0.7)");
+    expect(ctx.fill).toHaveBeenCalledTimes(1);
+    expect(ctx.stroke).not.toHaveBeenCalled();
+  });
+
+  test("strokes a path with length as before", () => {
+    const ctx = makeCtx();
+    Canvas.strokeBrushPath(ctx, [30, 40, 31, 40, 50, 60]);
+    expect(ctx.moveTo).toHaveBeenCalledWith(30, 40);
+    expect(ctx.lineTo).toHaveBeenNthCalledWith(1, 31, 40);
+    expect(ctx.lineTo).toHaveBeenNthCalledWith(2, 50, 60);
+    expect(ctx.stroke).toHaveBeenCalledTimes(1);
+    expect(ctx.arc).not.toHaveBeenCalled();
+  });
+
+  test("does nothing for an empty path", () => {
+    const ctx = makeCtx();
+    Canvas.strokeBrushPath(ctx, []);
+    expect(ctx.beginPath).not.toHaveBeenCalled();
+  });
+});
+
 describe("brushCursorFitsCss", () => {
   test("fits up to the 128px browser cursor limit, padding included", () => {
     expect(Canvas.MAX_CSS_CURSOR_SIZE).toBe(128);
@@ -306,7 +353,7 @@ function createExportRLECanvas(nw, nh) {
     canvas.style.setProperty = mock();
   }
   const imageData = { data: new Uint8ClampedArray(nw * nh * 4) };
-  canvas.getContext = () => ({
+  const ctx = {
     createImageData: () => ({ data: new Uint8ClampedArray(nw * nh * 4) }),
     putImageData: mock(),
     drawImage: mock(),
@@ -317,7 +364,11 @@ function createExportRLECanvas(nw, nh) {
     moveTo: mock(),
     lineTo: mock(),
     stroke: mock(),
-  });
+    arc: mock(),
+    fill: mock(),
+  };
+  canvas.getContext = () => ctx;
+  canvas.__ctx = ctx;
   return canvas;
 }
 
@@ -389,6 +440,38 @@ describe("Region2RLE", () => {
     };
     const result = Canvas.Region2RLE(region);
     expect(result).toBeDefined();
+    restoreAllMocks();
+  });
+
+  // DW-887: a click without movement must end up in the saved mask as a dot of the brush size
+  test.each([
+    ["brush", "source-over"],
+    ["eraser", "destination-out"],
+  ])("a single-click %s touch is painted as a dot into the mask", (_tool, compositeOperation) => {
+    const origCreateElement = document.createElement.bind(document);
+    let exportCanvas;
+    spyOn(document, "createElement").mockImplementation((tag) => {
+      if (tag === "canvas") return (exportCanvas = createExportRLECanvas(200, 100));
+      return origCreateElement(tag);
+    });
+    const region = {
+      currentImageEntity: { naturalWidth: 200, naturalHeight: 100 },
+      rle: null,
+      touches: [
+        {
+          toJSON: () => ({ relativePoints: [25, 50, 25, 50] }),
+          relativeStrokeWidth: 10, // 10% of 200px = 20px brush
+          compositeOperation,
+        },
+      ],
+    };
+    Canvas.Region2RLE(region);
+    const ctx = exportCanvas.__ctx;
+    // centre (50px, 50px), radius = half the 20px brush
+    expect(ctx.arc).toHaveBeenCalledWith(50, 50, 10, 0, 2 * Math.PI);
+    expect(ctx.fill).toHaveBeenCalled();
+    expect(ctx.stroke).not.toHaveBeenCalled();
+    expect(ctx.globalCompositeOperation).toBe(compositeOperation);
     restoreAllMocks();
   });
 
