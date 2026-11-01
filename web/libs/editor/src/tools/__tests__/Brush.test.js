@@ -218,23 +218,38 @@ describe("Brush tool", () => {
       expect(shortcuts["tool:increase-tool"][0]).toBe("Increase size");
     });
 
-    it("extraShortcuts decrease handler calls setStroke with clamped value", () => {
+    // DW-891: "[" / "]" move through the same steps as the slider (DW-890)
+    it("extraShortcuts decrease handler moves to the next smaller step", () => {
       const tool = createBrush();
       tool.setStroke(20);
-      const decreaseFn = tool.extraShortcuts["tool:decrease-tool"][1];
-      decreaseFn();
+      tool.extraShortcuts["tool:decrease-tool"][1]();
       expect(tool.strokeWidth).toBe(15);
+      tool.extraShortcuts["tool:decrease-tool"][1]();
+      expect(tool.strokeWidth).toBe(10);
+      tool.extraShortcuts["tool:decrease-tool"][1]();
+      expect(tool.strokeWidth).toBe(8);
     });
 
-    it("extraShortcuts increase handler calls setStroke with clamped value", () => {
+    it("extraShortcuts increase handler moves to the next bigger step", () => {
       const tool = createBrush();
-      tool.setStroke(40);
-      const increaseFn = tool.extraShortcuts["tool:increase-tool"][1];
-      increaseFn();
-      expect(tool.strokeWidth).toBe(45);
+      tool.setStroke(3);
+      tool.extraShortcuts["tool:increase-tool"][1]();
+      expect(tool.strokeWidth).toBe(5);
+      tool.setStroke(30);
+      tool.extraShortcuts["tool:increase-tool"][1]();
+      expect(tool.strokeWidth).toBe(40);
     });
 
-    it("extraShortcuts clamps to MIN_SIZE and MAX_SIZE", () => {
+    it("extraShortcuts keep the slider in sync (value is the step index of the new size)", () => {
+      const tool = createBrush(); // 15 = step 6
+      tool.extraShortcuts["tool:increase-tool"][1]();
+      const range = tool.controls[0];
+      expect(tool.strokeWidth).toBe(20);
+      expect(range.props.value).toBe(7);
+      expect(range.props.valueLabel(range.props.value)).toBe(20);
+    });
+
+    it("extraShortcuts stop at the smallest and the biggest step", () => {
       const tool = createBrush();
       tool.setStroke(1);
       tool.extraShortcuts["tool:decrease-tool"][1]();
@@ -242,6 +257,16 @@ describe("Brush tool", () => {
       tool.setStroke(50);
       tool.extraShortcuts["tool:increase-tool"][1]();
       expect(tool.strokeWidth).toBe(50);
+    });
+
+    it("extraShortcuts move a size that is not a step to the neighbouring step", () => {
+      const tool = createBrush();
+      tool.setStroke(12);
+      tool.extraShortcuts["tool:increase-tool"][1]();
+      expect(tool.strokeWidth).toBe(15);
+      tool.setStroke(12);
+      tool.extraShortcuts["tool:decrease-tool"][1]();
+      expect(tool.strokeWidth).toBe(10);
     });
   });
 

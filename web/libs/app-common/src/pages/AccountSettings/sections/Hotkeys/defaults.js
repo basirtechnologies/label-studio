@@ -572,6 +572,25 @@ export const DEFAULT_HOTKEYS = [
     description: "Select the eraser tool",
     active: true,
   },
+  // DW-891: size shortcuts of the active brush or eraser (same steps as the size slider)
+  {
+    id: 5601,
+    section: "tools",
+    element: "tool:decrease-tool",
+    label: "Decrease Brush/Eraser Size",
+    key: "[",
+    description: "Make the active brush or eraser one size smaller",
+    active: true,
+  },
+  {
+    id: 5602,
+    section: "tools",
+    element: "tool:increase-tool",
+    label: "Increase Brush/Eraser Size",
+    key: "]",
+    description: "Make the active brush or eraser one size bigger",
+    active: true,
+  },
   {
     id: 5700,
     section: "tools",

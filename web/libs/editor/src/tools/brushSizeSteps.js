@@ -1,5 +1,5 @@
 /**
- * Basir DW-890: fixed brush/eraser sizes for the size sliders (and the size shortcuts, DW-891).
+ * Basir DW-890: fixed brush/eraser sizes for the size sliders and the size shortcuts (DW-891).
  * The sliders move through these values one step at a time; the maximum stays at the previous MAX_SIZE.
  */
 export const BRUSH_SIZE_STEPS = [1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50];
@@ -27,4 +27,15 @@ export function stepIndexForSize(size) {
 export function sizeAtStep(index) {
   const i = Math.max(0, Math.min(BRUSH_SIZE_STEPS.length - 1, Math.round(index)));
   return BRUSH_SIZE_STEPS[i];
+}
+
+/**
+ * DW-891: next size for the size shortcuts ("[" smaller, "]" bigger): the nearest step below / above
+ * `size`, so a size that is not a step moves to the neighbouring step, and the ends stay where they are.
+ * @param {number} size
+ * @param {-1 | 1} direction -1 smaller, 1 bigger
+ */
+export function nextBrushSize(size, direction) {
+  if (direction > 0) return BRUSH_SIZE_STEPS.find((step) => step > size) ?? MAX_BRUSH_SIZE;
+  return [...BRUSH_SIZE_STEPS].reverse().find((step) => step < size) ?? MIN_BRUSH_SIZE;
 }

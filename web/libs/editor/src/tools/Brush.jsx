@@ -4,15 +4,12 @@ import { types } from "mobx-state-tree";
 import BaseTool from "./Base";
 import ToolMixin from "../mixins/Tool";
 import Canvas from "../utils/canvas";
-import { clamp, findClosestParent } from "../utils/utilities";
+import { findClosestParent } from "../utils/utilities";
 import { DrawingTool } from "../mixins/DrawingTool";
 import { Tool } from "../components/Toolbar/Tool";
 import { Range } from "../common/Range/Range";
 import { NodeViews } from "../components/Node/Node";
-import { BRUSH_SIZE_STEPS, sizeAtStep, stepIndexForSize } from "./brushSizeSteps";
-
-const MIN_SIZE = 1;
-const MAX_SIZE = 50;
+import { BRUSH_SIZE_STEPS, nextBrushSize, sizeAtStep, stepIndexForSize } from "./brushSizeSteps";
 
 const IconDot = ({ size }) => {
   return (
@@ -92,18 +89,19 @@ const _Tool = types
         />,
       ];
     },
+    // DW-891: "[" / "]" move the size one slider step (only registered while this tool is active)
     get extraShortcuts() {
       return {
         "tool:decrease-tool": [
           "Decrease size",
           () => {
-            self.setStroke(clamp(self.strokeWidth - 5, MIN_SIZE, MAX_SIZE));
+            self.setStroke(nextBrushSize(self.strokeWidth, -1));
           },
         ],
         "tool:increase-tool": [
           "Increase size",
           () => {
-            self.setStroke(clamp(self.strokeWidth + 5, MIN_SIZE, MAX_SIZE));
+            self.setStroke(nextBrushSize(self.strokeWidth, 1));
           },
         ],
       };
