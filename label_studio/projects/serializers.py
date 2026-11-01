@@ -3,6 +3,10 @@
 from decimal import Decimal
 
 import bleach
+from access_control.access import access_groups_requested, is_restricted
+from access_control.access import is_enabled as access_control_enabled
+from access_control.serializers import AccessGroupNamesField
+from access_control.services import project_group_names, set_project_groups
 from constants import SAFE_HTML_ATTRIBUTES, SAFE_HTML_TAGS, SAFE_INSTRUCTION_HTML_TAGS
 from django.db.models import Exists, OuterRef, Q
 from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
@@ -35,6 +39,7 @@ from organizations.models import Organization
 from projects.models import Project, ProjectImport, ProjectOnboarding, ProjectReimport, ProjectSummary
 from rest_flex_fields import FlexFieldsModelSerializer
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.serializers import SerializerMethodField
 from tasks.models import Annotation, Task
 from users.serializers import UserSimpleSerializer
@@ -155,6 +160,13 @@ class ProjectSerializer(FlexFieldsModelSerializer):
     queue_total = serializers.SerializerMethodField()
     queue_done = serializers.SerializerMethodField()
     state = FSMStateField(read_only=True)  # FSM state - automatically uses annotation if present
+    # Basir DW-907: names of the project's access groups. Read and set by LS admins (by everyone while access
+    # control is off); left out of responses serialized without a request, e.g. webhook payloads.
+    access_groups = AccessGroupNamesField(
+        required=False,
+        write_only=True,
+        help_text='Access groups of the project, e.g. ["ls-sightence-male"]. Unknown names create the group.',
+    )
 
     @property
     def user_id(self):
@@ -250,8 +262,37 @@ class ProjectSerializer(FlexFieldsModelSerializer):
 
         return data
 
+    def _can_manage_access_groups(self):
+        request = self.context.get('request')
+        return request is not None and not is_restricted(request.user)
+
+    def _shows_access_groups(self):
+        """LS admins see them while access control is on; while it's off only on request (responses stay upstream)."""
+        if 'access_groups' not in self.fields or not self._can_manage_access_groups():
+            return False
+        return (
+            access_control_enabled()
+            or self.context.get('access_groups_written')
+            or access_groups_requested(self.context['request'])
+        )
+
+    def validate_access_groups(self, value):
+        if not self._can_manage_access_groups():
+            raise PermissionDenied('Only LS admins can set access groups.')
+        return value
+
+    def create(self, validated_data):
+        access_groups = validated_data.pop('access_groups', None)
+        project = super().create(validated_data)
+        if access_groups is not None:
+            set_project_groups(project, access_groups)
+            self.context['access_groups_written'] = True
+        return project
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        if self._shows_access_groups():
+            data['access_groups'] = project_group_names(instance)
         # Rows saved before the allowlist was narrowed (or copied past the serializer) must not reach the browser raw
         instruction = data.get('expert_instruction')
         if instruction and '<' in instruction:
@@ -345,6 +386,7 @@ class ProjectSerializer(FlexFieldsModelSerializer):
             'queue_done',
             'config_suitable_for_bulk_annotation',
             'state',
+            'access_groups',
         ]
 
     def validate_label_config(self, value):
@@ -379,7 +421,12 @@ class ProjectSerializer(FlexFieldsModelSerializer):
         if validated_data.get('show_collab_predictions') is False:
             instance.model_version = ''
 
-        return super().update(instance, validated_data)
+        access_groups = validated_data.pop('access_groups', None)
+        instance = super().update(instance, validated_data)
+        if access_groups is not None:
+            set_project_groups(instance, access_groups)
+            self.context['access_groups_written'] = True
+        return instance
 
     def get_queue_total(self, project) -> int:
         user_annotations = Annotation.objects.filter(task_id=OuterRef('pk'), completed_by_id=self.user_id)

@@ -20,6 +20,7 @@ import { useContextComponent, useFixedLocation } from "../../providers/RoutesPro
 import { useAuth } from "@humansignal/core/providers/AuthProvider";
 import { cn } from "../../utils/bem";
 import { absoluteURL, isDefined } from "../../utils/helpers";
+import { canManageProjects } from "../../utils/ls-access";
 import { Breadcrumbs } from "../Breadcrumbs/Breadcrumbs";
 import { Dropdown } from "@humansignal/ui";
 import { Hamburger } from "../Hamburger/Hamburger";
@@ -222,7 +223,9 @@ export const Menubar = ({ enabled, defaultOpened, defaultPinned, children, onSid
               <Menu>
                 <Menu.Item label="Home" to="/" icon={<IconHome />} data-external exact />
                 <Menu.Item label="Projects" to="/projects" icon={<IconFolder />} data-external exact />
-                <Menu.Item label="Organization" to="/organization" icon={<IconPeople />} data-external exact />
+                {canManageProjects() && (
+                  <Menu.Item label="Organization" to="/organization" icon={<IconPeople />} data-external exact />
+                )}
 
                 <Menu.Spacer />
 

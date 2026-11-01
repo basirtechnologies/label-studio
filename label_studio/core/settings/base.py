@@ -263,6 +263,7 @@ INSTALLED_APPS = [
     'ml_model_providers',
     'jwt_auth',
     'session_policy',
+    'access_control',  # Basir DW-907: access groups and LS roles
 ]
 
 MIDDLEWARE = [
@@ -300,6 +301,8 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'core.api_permissions.HasObjectPermission',
         'rest_framework.permissions.IsAuthenticated',
+        # Basir DW-907: admin-only views for LS labelers; allows everything while access control is off
+        'access_control.permissions.LSRolePermission',
     ],
     'EXCEPTION_HANDLER': 'core.utils.common.custom_exception_handler',
     'DEFAULT_RENDERER_CLASSES': ('rest_framework.renderers.JSONRenderer',),
@@ -380,6 +383,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.settings',
+                'access_control.context_processors.ls_access',  # Basir DW-907
             ],
             'builtins': ['django.templatetags.i18n'],
         },
@@ -639,6 +643,10 @@ MAX_SESSION_AGE = int(get_env('MAX_SESSION_AGE', timedelta(days=14).total_second
 MAX_TIME_BETWEEN_ACTIVITY = int(get_env('MAX_TIME_BETWEEN_ACTIVITY', timedelta(days=5).total_seconds()))
 
 SSRF_PROTECTION_ENABLED = get_bool_env('SSRF_PROTECTION_ENABLED', True)
+
+# Basir DW-907: device-based access control. Off = upstream behaviour. On = users whose LS role is not "admin"
+# only see projects sharing an access group with them, and admin-only operations answer 403 (access_control app).
+BASIR_ACCESS_CONTROL_ENABLED = get_bool_env('BASIR_ACCESS_CONTROL_ENABLED', False)
 USE_DEFAULT_BANNED_SUBNETS = get_bool_env('USE_DEFAULT_BANNED_SUBNETS', True)
 USER_ADDITIONAL_BANNED_SUBNETS = get_env_list('USER_ADDITIONAL_BANNED_SUBNETS', default=[])
 
@@ -788,7 +796,8 @@ CREATE_ORGANIZATION = 'organizations.functions.create_organization'
 SAVE_USER = 'users.functions.save_user'
 POST_PROCESS_REIMPORT = 'core.utils.common.empty'
 USER_SERIALIZER = 'users.serializers.BaseUserSerializer'
-WHOAMI_USER_SERIALIZER = 'users.serializers.BaseWhoAmIUserSerializer'
+# Basir DW-907: whoami adds the LS role and drops admin-only permissions for LS labelers
+WHOAMI_USER_SERIALIZER = 'access_control.serializers.LSAccessWhoAmIUserSerializer'
 USER_SERIALIZER_UPDATE = 'users.serializers.BaseUserSerializerUpdate'
 ANNOTATOR_REVIEWER_FIREWALL = 'users.firewall.AnnotatorReviewerFirewall'
 TASK_SERIALIZER = 'tasks.serializers.BaseTaskSerializer'
@@ -801,7 +810,8 @@ DATA_MANAGER_ANNOTATIONS_MAP = {}
 DATA_MANAGER_ACTIONS = {}
 DATA_MANAGER_CUSTOM_FILTER_EXPRESSIONS = 'data_manager.functions.custom_filter_expressions'
 DATA_MANAGER_PREPROCESS_FILTER = 'data_manager.functions.preprocess_filter'
-DATA_MANAGER_CHECK_ACTION_PERMISSION = 'data_manager.actions.check_action_permission'
+# Basir DW-907: upstream check, plus admin-only actions hidden for LS labelers while access control is on
+DATA_MANAGER_CHECK_ACTION_PERMISSION = 'access_control.permissions.check_action_permission'
 DATA_MANAGER_LIST_FILTER_MAX_VALUES = int(get_env('DATA_MANAGER_LIST_FILTER_MAX_VALUES', 5000))
 BULK_UPDATE_IS_LABELED = 'tasks.functions.bulk_update_is_labeled_by_overlap'
 BULK_CREATE_ANNOTATIONS_FSM_INITIALIZER = None

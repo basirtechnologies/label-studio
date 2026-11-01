@@ -2,6 +2,7 @@
 
 import logging
 
+from access_control.access import is_restricted, restrict_projects
 from core.current_request import CurrentContext
 from core.feature_flags import flag_set
 from core.permissions import ViewClassPermission, all_permissions
@@ -287,7 +288,12 @@ class ViewAPI(viewsets.ModelViewSet):
         return Response(status=204)
 
     def get_queryset(self):
-        return View.objects.filter(project__organization=self.request.user.active_organization).order_by('order', 'id')
+        # Basir DW-907: limited to the user's access groups while access control is on
+        return restrict_projects(
+            View.objects.filter(project__organization=self.request.user.active_organization),
+            self.request.user,
+            'project',
+        ).order_by('order', 'id')
 
 
 def _paginator_with_known_count(paginator_class, count):
@@ -591,12 +597,14 @@ class ProjectStateAPI(APIView):
         project = generics.get_object_or_404(Project, pk=pk)
         self.check_object_permissions(request, project)
         data = ProjectSerializer(project).data
+        # Basir DW-907: LS labelers can't delete tasks or manage others' annotations (the UI hides those entries)
+        can_manage = not is_restricted(request.user)
 
         data.update(
             {
-                'can_delete_tasks': True,
-                'can_manage_annotations': True,
-                'can_manage_tasks': True,
+                'can_delete_tasks': can_manage,
+                'can_manage_annotations': can_manage,
+                'can_manage_tasks': can_manage,
                 'source_syncing': False,
                 'target_syncing': False,
                 'task_count': project.tasks.count(),

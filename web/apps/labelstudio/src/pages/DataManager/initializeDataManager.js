@@ -1,5 +1,6 @@
 import { loadAndApplyProjectHotkeys } from "@humansignal/app-common/pages/AccountSettings/hooks/useHotkeys";
 import { APIConfig } from "./api-config";
+import { canManageProjects } from "../../utils/ls-access";
 
 /**
  * Construct a DataManager after optionally loading project hotkeys.
@@ -39,8 +40,9 @@ export const initializeDataManager = async (root, props, params, { isCancelled }
       showPreviews: false,
       apiEndpoints: APIConfig.endpoints,
       interfaces: {
-        import: true,
-        export: true,
+        // Basir DW-907: import and export are for LS admins
+        import: canManageProjects(),
+        export: canManageProjects(),
         backButton: false,
         labelingHeader: false,
         autoAnnotation: params.autoAnnotation,

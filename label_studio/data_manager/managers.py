@@ -9,6 +9,7 @@ from functools import reduce
 from typing import ClassVar
 
 import ujson as json
+from access_control.access import restrict_projects
 from core.utils.db import fast_first
 from data_manager.column_names import UNQUERYABLE_COLUMN_NAME_CHARACTERS, is_queryable_column_name
 from data_manager.prepare_params import ConjunctionEnum
@@ -1525,7 +1526,10 @@ class TaskManager(models.Manager):
         return TaskQuerySet(self.model, using=self._db)
 
     def for_user(self, user):
-        return self.get_queryset().filter(project__organization=user.active_organization)
+        # Basir DW-907: limited to the user's access groups while access control is on
+        return restrict_projects(
+            self.get_queryset().filter(project__organization=user.active_organization), user, 'project'
+        )
 
     def with_state(self):
         """Return queryset with FSM state annotated."""

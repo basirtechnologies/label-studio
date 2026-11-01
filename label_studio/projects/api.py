@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 
+from access_control.access import restrict_projects, shows_access_groups
 from core.feature_flags import flag_set
 from core.filters import NumberInFilter
 from core.label_config import config_essential_data_has_changed
@@ -177,7 +178,7 @@ class ProjectListAPI(generics.ListCreateAPIView):
         fields = self.get_requested_fields(serializer)
         sparse_fields = self.get_sparse_fields()
         filter = serializer.validated_data.get('filter')
-        projects = Project.objects.filter(organization=self.request.user.active_organization).order_by(
+        projects = Project.objects.for_user(self.request.user).order_by(
             F('pinned_at').desc(nulls_last=True), '-created_at'
         )
         search = serializer.validated_data.get('search')
@@ -207,6 +208,8 @@ class ProjectListAPI(generics.ListCreateAPIView):
             prefetch_fields.append('members')
         if sparse_fields is None or 'created_by' in sparse_fields:
             prefetch_fields.append('created_by')
+        if shows_access_groups(self.request, sparse_fields):
+            prefetch_fields.append('access_groups')  # Basir DW-907
         return projects.prefetch_related(*prefetch_fields) if prefetch_fields else projects
 
     def get_serializer(self, *args, **kwargs):
@@ -268,8 +271,10 @@ class ProjectCountsListAPI(generics.ListAPIView):
         serializer = GetFieldsSerializer(data=self.request.query_params)
         serializer.is_valid(raise_exception=True)
         fields = serializer.validated_data.get('include')
-        projects = Project.objects.with_counts(fields=fields).filter(
-            organization=self.request.user.active_organization
+        # Basir DW-907: limited to the user's access groups while access control is on
+        projects = restrict_projects(
+            Project.objects.with_counts(fields=fields).filter(organization=self.request.user.active_organization),
+            self.request.user,
         )
 
         # Only annotate FSM state for UI/API consumption when both feature flags are enabled
@@ -402,8 +407,10 @@ class ProjectAPI(generics.RetrieveUpdateDestroyAPIView):
         serializer = GetFieldsSerializer(data=self.request.query_params)
         serializer.is_valid(raise_exception=True)
         fields = serializer.validated_data.get('include')
-        projects = Project.objects.with_counts(fields=fields).filter(
-            organization=self.request.user.active_organization
+        # Basir DW-907: limited to the user's access groups while access control is on
+        projects = restrict_projects(
+            Project.objects.with_counts(fields=fields).filter(organization=self.request.user.active_organization),
+            self.request.user,
         )
 
         # Only annotate FSM state for UI/API consumption when both feature flags are enabled
@@ -1100,7 +1107,7 @@ class ProjectModelVersions(generics.RetrieveAPIView):
     permission_required = all_permissions.projects_view
 
     def get_queryset(self):
-        return Project.objects.filter(organization=self.request.user.active_organization)
+        return Project.objects.for_user(self.request.user)
 
     def get(self, request, *args, **kwargs):
         project = self.get_object()

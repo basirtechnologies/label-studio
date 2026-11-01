@@ -8,6 +8,8 @@ import { cn } from "../../utils/bem";
 import { HeidiTips } from "../../components/HeidiTips/HeidiTips";
 import { FF_LSDV_E_297, isFF } from "../../utils/feature-flags";
 import { createURL } from "../../components/HeidiTips/utils";
+import { canManageProjects } from "../../utils/ls-access";
+import { AccessGroupsSettings } from "./AccessGroupsSettings";
 
 export const GeneralSettings = () => {
   const { project, fetchProject } = useContext(ProjectContext);
@@ -124,6 +126,7 @@ export const GeneralSettings = () => {
               </Button>
             </Form.Actions>
           </Form>
+          {canManageProjects() && <AccessGroupsSettings project={project} />}
         </div>
       </div>
       {isFF(FF_LSDV_E_297) && <HeidiTips collection="projectSettings" />}
