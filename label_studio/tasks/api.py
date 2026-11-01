@@ -1034,12 +1034,13 @@ class AnnotationAPI(generics.RetrieveUpdateDestroyAPIView):
     def get(self, request, *args, **kwargs):
         return super(AnnotationAPI, self).get(request, *args, **kwargs)
 
-    @api_webhook(WebhookAction.ANNOTATION_UPDATED)
+    # Basir: atomic=True rolls the update back when the (inline) webhook rejects it
+    @api_webhook(WebhookAction.ANNOTATION_UPDATED, atomic=True)
     @extend_schema(exclude=True)
     def put(self, request, *args, **kwargs):
         return super(AnnotationAPI, self).put(request, *args, **kwargs)
 
-    @api_webhook(WebhookAction.ANNOTATION_UPDATED)
+    @api_webhook(WebhookAction.ANNOTATION_UPDATED, atomic=True)
     def patch(self, request, *args, **kwargs):
         return super(AnnotationAPI, self).patch(request, *args, **kwargs)
 
@@ -1128,7 +1129,8 @@ class AnnotationsListAPI(GetParentObjectMixin, generics.ListCreateAPIView):
     def get(self, request, *args, **kwargs):
         return super(AnnotationsListAPI, self).get(request, *args, **kwargs)
 
-    @api_webhook(WebhookAction.ANNOTATION_CREATED)
+    # Basir: atomic=True rolls the new annotation back when the (inline) webhook rejects it
+    @api_webhook(WebhookAction.ANNOTATION_CREATED, atomic=True)
     def post(self, request, *args, **kwargs):
         return super(AnnotationsListAPI, self).post(request, *args, **kwargs)
 
