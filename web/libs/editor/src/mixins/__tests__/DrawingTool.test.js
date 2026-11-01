@@ -534,6 +534,29 @@ describe("TwoPointsDrawingTool", () => {
     expect(shape.setPositionInternal).toHaveBeenCalled();
   });
 
+  // DW-888 regression: dragging past the image edge never yields coordinates outside 0-100%
+  it("draw clamps a rectangle dragged past the right/bottom image edge to 100%", () => {
+    const store = createTwoPointsStore();
+    const tool = store.tool;
+    tool.startDrawing(80, 40);
+    const shape = tool.getCurrentArea();
+    shape.startX = 80;
+    shape.startY = 40;
+    tool.draw(130, 160);
+    expect(shape.setPositionInternal).toHaveBeenLastCalledWith(80, 40, 20, 60, 0);
+  });
+
+  it("draw clamps a rectangle dragged past the left/top image edge to 0%", () => {
+    const store = createTwoPointsStore();
+    const tool = store.tool;
+    tool.startDrawing(20, 30);
+    const shape = tool.getCurrentArea();
+    shape.startX = 20;
+    shape.startY = 30;
+    tool.draw(-50, -10);
+    expect(shape.setPositionInternal).toHaveBeenLastCalledWith(0, 0, 20, 30, 0);
+  });
+
   it("draw with ellipse type uses ellipse bounds", () => {
     const store = createTwoPointsStore();
     const tool = store.tool;

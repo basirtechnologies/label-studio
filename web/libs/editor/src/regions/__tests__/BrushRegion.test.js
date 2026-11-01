@@ -566,6 +566,14 @@ describe("BrushRegion", () => {
       region.preDraw(5, 5);
       expect(ctx.rect).toHaveBeenCalled();
       expect(ctx.clip).toHaveBeenCalled();
+      // DW-888 regression: the live stroke is clipped to the image (alignment offset + image size on screen)
+      const { alignmentOffset, stageWidth, stageHeight, stageScale } = region.parent;
+      expect(ctx.rect).toHaveBeenCalledWith(
+        alignmentOffset.x,
+        alignmentOffset.y,
+        stageWidth * stageScale,
+        stageHeight * stageScale,
+      );
     });
 
     it("preDraw uses cachedPoints when multiple points added", () => {
