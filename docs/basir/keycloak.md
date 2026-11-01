@@ -60,7 +60,21 @@ mapper doesn't depend on the default `roles` client scope. Keep the default clie
 **Users → user → Role mapping → Assign role** (`ls-admin` or `ls-labeler`) and **Groups → Join group**.
 Every Keycloak user needs an **email address**.
 
-## 6. Keycloak's hostname when the browser and Label Studio reach it differently
+## 6. Keycloak's hostname
+
+**Simplest (one URL for both):** if the Label Studio container can reach Keycloak at the same URL as the browser,
+set only `OIDC_OP_BASE_URL=http://<server-ip>:9090/realms/data_service` and leave `OIDC_OP_INTERNAL_BASE_URL` empty.
+This works with `start-dev --http-port=9090` and no `KC_HOSTNAME` (Keycloak then derives its URLs from the request,
+which is the same URL for the browser and the container). Check from the container:
+
+```bash
+docker compose exec app python3 -c "import urllib.request; print(urllib.request.urlopen('http://<server-ip>:9090/realms/data_service/.well-known/openid-configuration').read()[:200])"
+```
+
+Over plain HTTP from a non-private address, the realm's **Require SSL** (Realm settings → General) must be `none`
+(the default `external requests` only allows HTTP from private addresses such as 10.x, 172.16–31.x, 192.168.x).
+
+**When the browser and Label Studio reach it differently:**
 
 The browser goes to `OIDC_OP_BASE_URL` (e.g. `http://<public-host>:9090/realms/data_service`); the Label Studio
 container calls the token, userinfo and JWKS endpoints at `OIDC_OP_INTERNAL_BASE_URL` (e.g.
