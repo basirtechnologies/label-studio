@@ -16,10 +16,11 @@ import { RectRegionModel } from "../../../regions/RectRegion";
 import * as Tools from "../../../tools";
 import ToolsManager from "../../../tools/Manager";
 import { parseValue } from "../../../utils/data";
-import { FF_DEV_3391 } from "../../../utils/feature-flags";
+import { FF_DEV_3391, FF_KEEP_ZOOM_BETWEEN_IMAGES, isFFDefaultOn } from "../../../utils/feature-flags";
 import { guidGenerator } from "../../../utils/unique";
 import { clamp, isDefined } from "../../../utils/utilities";
 import ObjectBase from "../Base";
+import { CARRIED_VIEW_SETTLE_MS, captureView, editorZoomForScale, positionForView } from "./carryZoom";
 import { DrawingRegion } from "./DrawingRegion";
 import { ImageEntityMixin } from "./ImageEntityMixin";
 import { ImageSelection } from "./ImageSelection";
@@ -186,6 +187,10 @@ const Model = types
   .volatile(() => ({
     currentImage: undefined,
     supportSuggestions: true,
+    // DW-889: zoom + centre carried over to the next image of a multi-image tag (see carryZoom.js)
+    carriedView: null,
+    // when the carried view was applied; resizes right after that re-apply it (see onResize)
+    carriedViewAppliedAt: 0,
   }))
   .views((self) => ({
     get store() {
@@ -780,9 +785,55 @@ const Model = types
         return;
       }
 
+      // DW-889: remember the zoom/position of the image being left, so the next one opens the same way.
+      // Only from a loaded image: paging on before an image loaded keeps the view carried so far.
+      if (
+        self.multiImage &&
+        isFFDefaultOn(FF_KEEP_ZOOM_BETWEEN_IMAGES) &&
+        self.currentImageEntity &&
+        self.imageIsLoaded
+      ) {
+        self.carriedView = self.captureCurrentView();
+      }
+
       self.currentImage = index;
       self.currentImageEntity = self.findImageEntity(index);
       self.preloadImages();
+    },
+
+    captureCurrentView() {
+      return captureView({
+        currentZoom: self.currentZoom,
+        fitZoom: Math.max(1, self.maxScale),
+        stageZoom: self.stageZoom,
+        zoomScale: self.zoomScale,
+        zoomingPositionX: self.zoomingPositionX,
+        zoomingPositionY: self.zoomingPositionY,
+        canvasSize: self.canvasSize,
+        stageWidth: self.stageWidth,
+        stageHeight: self.stageHeight,
+      });
+    },
+
+    /**
+     * DW-889: show the image that was just loaded and fitted at the carried zoom scale, then put the same
+     * relative point in the middle of the viewport. setZoomPosition clamps it, so the image stays in view.
+     */
+    applyCarriedView() {
+      const view = self.carriedView;
+      if (!view || !self.multiImage || !isFFDefaultOn(FF_KEEP_ZOOM_BETWEEN_IMAGES)) return;
+
+      self.setZoom(editorZoomForScale(view.scale, self.maxScale));
+      self.updateImageAfterZoom();
+      const { x, y } = positionForView(view, {
+        zoomScale: self.zoomScale,
+        canvasSize: self.canvasSize,
+        stageWidth: self.stageWidth,
+        stageHeight: self.stageHeight,
+      });
+      self.setZoomPosition(x, y);
+      self.updateImageAfterZoom();
+      self.carriedViewAppliedAt = Date.now();
     },
 
     preloadImages() {
@@ -907,6 +958,7 @@ const Model = types
 
     sizeToFit() {
       const { maxScale } = self;
+      self.carriedViewAppliedAt = 0;
 
       self.defaultzoom = "fit";
       self.setZoom(maxScale);
@@ -965,6 +1017,7 @@ const Model = types
       mouseRelativePos = { x: self.canvasSize.width / 2, y: self.canvasSize.height / 2 },
       isEvent = false,
     ) {
+      self.carriedViewAppliedAt = 0;
       if (val) {
         const zoomScale = isEvent
           ? self.getInertialZoom(val)
@@ -1163,6 +1216,8 @@ const Model = types
       } else {
         self.sizeToAuto();
       }
+      // DW-889: paging between images of a multi-image tag keeps the zoom/position of the previous image
+      self.applyCarriedView();
       // Don't force unselection of regions during the updateObjects callback from history reinit
       setTimeout(() => self.annotation?.reinitHistory(false), 0);
     },
@@ -1189,6 +1244,11 @@ const Model = types
      */
     onResize(width, height, userResize) {
       self._updateImageSize({ width, height, userResize });
+      // DW-889: right after a page change the container settles to its final size, and the resize keeps the
+      // zoom relative to the fit, which changes the carried zoom scale. Re-apply the carried view then.
+      if (self.carriedViewAppliedAt && Date.now() - self.carriedViewAppliedAt < CARRIED_VIEW_SETTLE_MS) {
+        self.applyCarriedView();
+      }
     },
 
     event(name, ev, screenX, screenY) {
