@@ -136,7 +136,7 @@ def _requested_project_ids(request) -> list:
 
 
 class LSRolePermission(BasePermission):
-    """Admin-only views for labelers, and labelers may only change their own annotations and profile."""
+    """Admin-only views for labelers, owner-only annotation deletion and profile changes."""
 
     message = DENIED_MESSAGE
 
@@ -160,8 +160,10 @@ class LSRolePermission(BasePermission):
         from tasks.models import Annotation
         from users.models import User
 
-        if isinstance(obj, Annotation) and obj.completed_by_id != request.user.id:
-            self.message = 'Labelers can only change or delete their own annotations.'
+        # HasObjectPermission checks the annotation's stored project, independent of request parameters.
+        # Labelers may edit any annotation in their groups, but may only delete their own.
+        if isinstance(obj, Annotation) and request.method == 'DELETE' and obj.completed_by_id != request.user.id:
+            self.message = 'Labelers can only delete their own annotations.'
             return False
         if isinstance(obj, User) and obj.id != request.user.id:
             self.message = 'Labelers can only change their own account.'

@@ -7,7 +7,7 @@ hard-coded) and an **LS role** per user.
 | LS role   | Sees                                                    | Can                                                                 |
 |-----------|---------------------------------------------------------|---------------------------------------------------------------------|
 | `admin`   | every project of the organization                       | everything                                                          |
-| `labeler` | projects that share at least one access group with them | label, submit, update and skip their own work; Data Manager tabs   |
+| `labeler` | projects that share at least one access group with them | create/update annotations, skip, delete own annotations; Data Manager tabs |
 | no role   | projects that share a group with them (none by default) | as a labeler                                                        |
 
 `is_superuser` / `is_staff` give no access while access control is on (they don't bypass the filter, and the
@@ -45,8 +45,12 @@ Django admin at `/admin/` is for LS admins only).
   Data Manager, next task, stats, `/tasks/<id>/resolve/`, `/presign/`, uploaded files — with a session, a legacy
   token or a JWT.
 - Admin-only (**403**): create/update/delete projects, labeling config, project settings, import, export, storages,
-  webhooks, ML backends, creating/changing/deleting tasks and predictions, changing or deleting other users'
+  webhooks, ML backends, creating/changing/deleting tasks and predictions, deleting other users'
   annotations, organization/member pages, invites, label library changes. The UI hides these entries.
+- Labelers can update any annotation in an accessible project, including work created by shared accounts or other
+  labelers. Authorization uses the annotation's stored project, regardless of query/body `project` or `task` values.
+  Updates preserve the original `completed_by` (read-only for labeler updates); the existing `updated_by` field
+  records the editor. Admins and access-control-disabled behavior are unchanged.
 
 ## API
 
