@@ -102,6 +102,7 @@
       initials: "{{user.get_initials}}",
 	email: "{{user.email}}",
 	customHotkeys: __customHotkeys,
+      {% if ls_access %}ls_access: {{ ls_access|json_dumps_ensure_ascii|safe }},{% endif %}
 
       allow_newsletters: {% if user.allow_newsletters is None %}null{% else %}{{user.allow_newsletters|yesno:"true,false"}}{% endif %},
       {% if user.avatar %}

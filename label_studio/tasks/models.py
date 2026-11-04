@@ -12,6 +12,7 @@ from typing import Any, Mapping, Optional, Union, cast
 from urllib.parse import urljoin
 
 import ujson as json
+from access_control.access import restrict_projects
 from core.current_request import CurrentContext, get_current_request
 from core.feature_flags import flag_set
 from core.label_config import SINGLE_VALUED_TAGS
@@ -647,7 +648,10 @@ class AnnotationManager(models.Manager):
         return AnnotationQuerySetWithFSM(self.model, using=self._db)
 
     def for_user(self, user):
-        return self.get_queryset().filter(project__organization=user.active_organization)
+        # Basir DW-907: limited to the user's access groups while access control is on
+        return restrict_projects(
+            self.get_queryset().filter(project__organization=user.active_organization), user, 'project'
+        )
 
     def with_state(self):
         """Return queryset with FSM state annotated."""

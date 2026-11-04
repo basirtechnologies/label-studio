@@ -8,6 +8,7 @@ from wsgiref.util import FileWrapper
 
 import pandas as pd
 import requests
+from access_control.access import is_restricted
 from core import utils
 from core.feature_flags import all_flags, get_feature_file_path
 from core.label_config import generate_time_series_json
@@ -54,7 +55,12 @@ def version_page(request):
     # html / json response
     if request.path == '/version/':
         # other settings from backend
-        if not getattr(settings, 'CLOUD_INSTANCE', False) and request.user.is_superuser:
+        # Basir DW-907: the settings dump is for LS admins only while access control is on, whatever is_superuser says
+        if (
+            not getattr(settings, 'CLOUD_INSTANCE', False)
+            and request.user.is_superuser
+            and not is_restricted(request.user)
+        ):
             result['settings'] = {
                 key: str(getattr(settings, key))
                 for key in dir(settings)

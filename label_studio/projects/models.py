@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any, Mapping, Optional
 
+from access_control.access import restrict_projects
 from annoying.fields import AutoOneToOneField
 from core.current_request import CurrentContext
 from core.label_config import (
@@ -110,7 +111,8 @@ class ProjectManager(models.Manager):
         return ProjectQuerySetWithFSM(self.model, using=self._db)
 
     def for_user(self, user):
-        return self.get_queryset().filter(organization=user.active_organization)
+        # Basir DW-907: limited to the user's access groups while access control is on
+        return restrict_projects(self.get_queryset().filter(organization=user.active_organization), user)
 
     def with_state(self):
         """

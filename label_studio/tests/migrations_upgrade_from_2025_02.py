@@ -121,9 +121,10 @@ def seed(apps):
         filter_group=shared_group,
     )
     View.objects.create(project=project, user=user, data={'title': 'Plain'})
+    return {'user': user.id, 'organization': org.id, 'project': project.id, 'task': task.id}
 
 
-def verify():
+def verify(seeded):
     from core.models import AsyncMigrationStatus
     from data_manager.models import View
     from projects.models import Project
@@ -163,13 +164,42 @@ def verify():
         status = AsyncMigrationStatus.objects.get(name=name).status
         assert status == AsyncMigrationStatus.STATUS_FINISHED, (name, status)
 
+    verify_access_control(seeded)
+
+
+def verify_access_control(seeded):
+    """Basir DW-907: access_control only adds tables; existing rows keep their IDs, then get groups and roles."""
+    from access_control.access import restrict_projects
+    from access_control.models import AccessGroup, UserAccess
+    from access_control.services import set_project_groups, set_user_access
+    from django.test import override_settings
+    from projects.models import Project
+    from tasks.models import Task
+    from users.models import User
+
+    project = Project.objects.get()
+    assert (project.id, project.organization_id) == (seeded['project'], seeded['organization'])
+    assert Task.objects.get().id == seeded['task']
+    user = User.objects.get(id=seeded['user'])
+    assert AccessGroup.objects.count() == 0 and UserAccess.objects.count() == 0
+    assert project.access_groups.count() == 0
+
+    set_project_groups(project, ['ls-sightence-male'])
+    set_user_access(user, role='labeler', groups=['ls-sightence-female'])
+    with override_settings(BASIR_ACCESS_CONTROL_ENABLED=True):
+        assert not restrict_projects(Project.objects.all(), user).exists()
+        set_user_access(user, groups=['ls-sightence-male'])
+        assert list(restrict_projects(Project.objects.all(), user)) == [project]
+        set_user_access(user, role='admin', groups=[])
+        assert restrict_projects(Project.objects.all(), user).count() == 1
+
 
 def main():
     cleanup_first = '--cleanup-before-filter-parent' in sys.argv
     print(f'Database: {connection.vendor} {connection.settings_dict["NAME"]}')
     apps = migrate_to_baseline()
     print('Migrated to the 2025-02 baseline')
-    seed(apps)
+    seeded = seed(apps)
     print('Seeded baseline data')
     if cleanup_first:
         # data_manager has two 0013 migrations that both depend only on 0012, so Django may apply them in either
@@ -179,7 +209,7 @@ def main():
         )
         print('Applied 0013_cleanup before 0013_filter_parent')
     call_command('migrate', interactive=False, verbosity=1)
-    verify()
+    verify(seeded)
     print('UPGRADE OK')
 
 

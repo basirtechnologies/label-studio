@@ -7,6 +7,7 @@ import { Userpic, Button, Dropdown, Tooltip } from "@humansignal/ui";
 import { Menu, Pagination } from "../../components";
 import { cn } from "../../utils/bem";
 import { absoluteURL } from "../../utils/helpers";
+import { canManageProjects } from "../../utils/ls-access";
 import { ProjectStateChip } from "@humansignal/app-common";
 
 const DEFAULT_CARD_COLORS = ["#FFFFFF", "#FDFDFC"];
@@ -44,10 +45,16 @@ export const EmptyProjectsList = ({ openModal }) => {
         src={absoluteURL("/static/images/opossum_looking.png")}
       />
       <h1 className={cn("empty-projects-page").elem("header").toClassName()}>Heidi doesn't see any projects here!</h1>
-      <p>Create one and start labeling your data.</p>
-      <Button onClick={openModal} className="my-8" aria-label="Create new project">
-        Create Project
-      </Button>
+      {canManageProjects() ? (
+        <>
+          <p>Create one and start labeling your data.</p>
+          <Button onClick={openModal} className="my-8" aria-label="Create new project">
+            Create Project
+          </Button>
+        </>
+      ) : (
+        <p>No projects are shared with your access groups yet. Ask an LS admin if you expected some.</p>
+      )}
     </div>
   );
 };
@@ -99,7 +106,7 @@ const ProjectCard = ({ project }) => {
               <Dropdown.Trigger
                 content={
                   <Menu contextual>
-                    <Menu.Item href={`/projects/${project.id}/settings`}>Settings</Menu.Item>
+                    {canManageProjects() && <Menu.Item href={`/projects/${project.id}/settings`}>Settings</Menu.Item>}
                     <Menu.Item href={`/projects/${project.id}/data?labeling=1`}>Label</Menu.Item>
                   </Menu>
                 }
@@ -139,6 +146,20 @@ const ProjectCard = ({ project }) => {
           </div>
         </div>
         <div className={cn("project-card").elem("description").toClassName()}>{project.description}</div>
+        {project.access_groups?.length > 0 && (
+          // Basir DW-907: access groups (only in the response for LS admins)
+          <div className="flex flex-wrap gap-tightest px-base pb-tight" data-testid="project-access-groups">
+            {project.access_groups.map((group) => (
+              <span
+                key={group}
+                className="rounded-smallest border border-neutral-border px-tighter py-[1px] text-body-smallest text-neutral-content-subtle"
+                title="Access group"
+              >
+                {group}
+              </span>
+            ))}
+          </div>
+        )}
         <div className={cn("project-card").elem("info").toClassName()}>
           <div className={cn("project-card").elem("created-date").toClassName()}>
             {format(new Date(project.created_at), "dd MMM yyyy, HH:mm")}

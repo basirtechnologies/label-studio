@@ -2,6 +2,7 @@
 
 import logging
 
+from access_control.access import restrict_projects
 from core.mixins import GetParentObjectMixin
 from core.permissions import ViewClassPermission, all_permissions
 from core.utils.common import is_community
@@ -205,7 +206,10 @@ class TaskListAPI(DMTaskListAPI):
 
     def filter_queryset(self, queryset):
         queryset = super().filter_queryset(queryset)
-        return queryset.filter(project__organization=self.request.user.active_organization)
+        # Basir DW-907: limited to the user's access groups while access control is on
+        return restrict_projects(
+            queryset.filter(project__organization=self.request.user.active_organization), self.request.user, 'project'
+        )
 
     def get_requested_project(self):
         """Resolve the `project` from the request body and check the caller's access to it."""
@@ -490,7 +494,7 @@ class TaskAPI(generics.RetrieveUpdateDestroyAPIView):
         # First check permissions using a lightweight query
         # select_related('project') avoids extra query when permission check accesses task.project
         lean_task = generics.get_object_or_404(
-            Task.objects.filter(project__organization=self.request.user.active_organization).select_related('project'),
+            Task.objects.for_user(self.request.user).select_related('project'),
             pk=task_id,
         )
         self.check_object_permissions(self.request, lean_task)
@@ -1438,7 +1442,12 @@ class PredictionAPI(viewsets.ModelViewSet):
     filterset_fields = ['task', 'task__project', 'project']
 
     def get_queryset(self):
-        return Prediction.objects.filter(project__organization=self.request.user.active_organization)
+        # Basir DW-907: limited to the user's access groups while access control is on
+        return restrict_projects(
+            Prediction.objects.filter(project__organization=self.request.user.active_organization),
+            self.request.user,
+            'project',
+        )
 
     def get_serializer(self, *args, **kwargs):
         serializer = super().get_serializer(*args, **kwargs)

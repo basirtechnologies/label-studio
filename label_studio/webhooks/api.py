@@ -1,4 +1,5 @@
 import django_filters
+from access_control.permissions import LSRolePermission
 from core.permissions import ViewClassPermission, all_permissions
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
@@ -58,7 +59,8 @@ class WebhookFilterSet(django_filters.FilterSet):
 class WebhookListAPI(generics.ListCreateAPIView):
     queryset = Webhook.objects.all()
     serializer_class = WebhookSerializer
-    permission_classes = [IsAuthenticated]
+    # Basir DW-907: LSRolePermission makes webhooks admin-only while access control is on
+    permission_classes = [IsAuthenticated, LSRolePermission]
     filter_backends = [DjangoFilterBackend]
     filterset_class = WebhookFilterSet
     permission_required = ViewClassPermission(
@@ -131,7 +133,8 @@ class WebhookListAPI(generics.ListCreateAPIView):
 class WebhookAPI(generics.RetrieveUpdateDestroyAPIView):
     queryset = Webhook.objects.all()
     serializer_class = WebhookSerializer
-    permission_classes = [IsAuthenticated]
+    # Basir DW-907: LSRolePermission makes webhooks admin-only while access control is on
+    permission_classes = [IsAuthenticated, LSRolePermission]
     permission_required = ViewClassPermission(
         GET=all_permissions.webhooks_view,
         PATCH=all_permissions.webhooks_change,

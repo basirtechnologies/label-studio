@@ -1,5 +1,6 @@
 import logging
 
+from access_control.access import restrict_projects
 from core.permissions import ViewClassPermission, all_permissions
 from django.db.models import CharField, Count, Q
 from django.db.models.functions import Cast
@@ -212,7 +213,13 @@ class LabelLinkAPI(viewsets.ModelViewSet):
     )
 
     def get_queryset(self):
-        return LabelLink.objects.filter(label__organization=self.request.user.active_organization).annotate(
+        # Basir DW-907: links of projects outside the user's access groups are hidden while access control is on
+        links = restrict_projects(
+            LabelLink.objects.filter(label__organization=self.request.user.active_organization),
+            self.request.user,
+            'project',
+        )
+        return links.annotate(
             annotations_count=Count(
                 'project__tasks__annotations',
                 filter=Q(
