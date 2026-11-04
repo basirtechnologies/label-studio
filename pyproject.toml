@@ -26,6 +26,7 @@ dependencies = [
     "django-annoying (==0.10.6)",
     "django-debug-toolbar (==3.2.1)",
     "django-environ (==0.14.0)",
+    "mozilla-django-oidc (>=5.0.2,<6.0.0)",  # Basir DW-908: Keycloak (OIDC) login
     "django-filter (==24.3)",
     "django-rq (>=4.1.1,<4.2)",
     "django-cors-headers (==4.7.0)",

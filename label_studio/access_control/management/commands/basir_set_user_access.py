@@ -4,11 +4,12 @@
     python manage.py basir_set_user_access --email admin@example.com --role admin
     python manage.py basir_set_user_access --email someone@example.com --groups ""     # remove all groups
     python manage.py basir_set_user_access --email someone@example.com --role none     # remove the role
+    python manage.py basir_set_user_access --email someone@example.com --keycloak-sub <Keycloak user ID>  # link
 
 --groups replaces the user's groups (comma-separated); leave it out to keep them. Unknown groups are created.
 """
 
-from access_control.models import LSRole
+from access_control.models import LSRole, UserAccess
 from access_control.services import UNSET, get_user_access, set_user_access
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
@@ -24,6 +25,10 @@ class Command(BaseCommand):
         parser.add_argument(
             '--groups', help='Comma-separated access groups, replacing the current ones ("" removes all)'
         )
+        parser.add_argument(
+            '--keycloak-sub',
+            help='Link the account to a Keycloak user (its "sub", Keycloak: Users > user > ID); "" unlinks it',
+        )
 
     def handle(self, *args, **options):
         email = options['email'].strip()
@@ -38,11 +43,17 @@ class Command(BaseCommand):
         if options['groups'] is not None:
             groups = [name for name in options['groups'].split(',') if name.strip()]
 
-        if role is UNSET and groups is UNSET:
+        keycloak_sub = UNSET
+        if options['keycloak_sub'] is not None:
+            keycloak_sub = options['keycloak_sub'].strip() or None
+            if keycloak_sub and UserAccess.objects.filter(keycloak_sub=keycloak_sub).exclude(user=user).exists():
+                raise CommandError(f'Keycloak subject {keycloak_sub} is already linked to another account')
+
+        if role is UNSET and groups is UNSET and keycloak_sub is UNSET:
             current = get_user_access(user)
         else:
             try:
-                current = set_user_access(user, role=role, groups=groups)
+                current = set_user_access(user, role=role, groups=groups, keycloak_sub=keycloak_sub)
             except ValidationError as e:
                 raise CommandError('; '.join(e.messages))
 
