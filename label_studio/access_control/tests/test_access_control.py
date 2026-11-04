@@ -295,7 +295,6 @@ def admin_only_requests(world, labeler):
         ('create prediction', 'post', '/api/predictions/', {'task': task.id, 'result': []}),
         ('delete prediction', 'delete', f'/api/predictions/{world.predictions[MALE].id}/', None),
         ('delete others annotation', 'delete', f'/api/annotations/{world.annotations[MALE].id}/', None),
-        ('update others annotation', 'patch', f'/api/annotations/{world.annotations[MALE].id}/', {'result': []}),
         ('organizations', 'get', '/api/organizations/', None),
         ('organization', 'get', f'/api/organizations/{world.org.id}', None),
         ('members', 'get', f'/api/organizations/{world.org.id}/memberships', None),
@@ -361,6 +360,130 @@ def test_labeler_can_label_skip_and_manage_own_work(world):
     )
     # own profile
     assert client.patch(f'/api/users/{labeler.id}/', {'first_name': 'Me'}, format='json').status_code == 200
+
+
+@enabled
+@pytest.mark.parametrize('auth', CLIENTS)
+@pytest.mark.parametrize('method', ['patch', 'put'])
+@pytest.mark.parametrize('shared_account', [True, False])
+def test_labeler_can_update_group_annotation_preserving_author_and_recording_editor(
+    world, auth, method, shared_account
+):
+    owner = world.owner if shared_account else world.user(role='labeler', groups=[MAIL])
+    set_user_access(owner, role='labeler', groups=[MAIL])
+    annotation = world.annotations[MAIL]
+    annotation.completed_by = owner
+    annotation.save()
+    editor = world.user(role='labeler', groups=[MAIL])
+    set_user_access(editor, keycloak_sub='mail-scanner-keycloak-editor')
+    client = CLIENTS[auth](editor)
+    result = [
+        {'id': 'group-edit', 'from_name': 'c', 'to_name': 'text', 'type': 'choices', 'value': {'choices': ['a']}}
+    ]
+    url = f'/api/annotations/{annotation.id}/?taskID={annotation.task_id}&project={annotation.project_id}'
+
+    response = getattr(client, method)(url, {'result': result}, format='json')
+
+    assert response.status_code == 200, response.content
+    annotation.refresh_from_db()
+    assert annotation.result == result
+    assert annotation.completed_by_id == owner.id
+    assert annotation.updated_by_id == editor.id
+    assert response.json()['completed_by'] == owner.id
+    assert response.json()['updated_by'] == editor.id
+    annotation.task.refresh_from_db()
+    assert annotation.task.updated_by_id == editor.id
+    assert client.delete(url).status_code == 403
+    assert Annotation.objects.filter(id=annotation.id).exists()
+
+
+@enabled
+@pytest.mark.parametrize('auth', CLIENTS)
+@pytest.mark.parametrize('method', ['patch', 'put'])
+def test_labeler_cannot_take_annotation_ownership_to_delete_it(world, auth, method):
+    editor = world.user(role='labeler', groups=[MAIL])
+    annotation = world.annotations[MAIL]
+    client = CLIENTS[auth](editor)
+    url = f'/api/annotations/{annotation.id}/'
+
+    response = getattr(client, method)(
+        url, {'result': [], 'completed_by': editor.id, 'updated_by': world.owner.id}, format='json'
+    )
+
+    assert response.status_code == 200, response.content
+    annotation.refresh_from_db()
+    assert annotation.completed_by_id == world.owner.id
+    assert annotation.updated_by_id == editor.id
+    assert client.delete(url).status_code == 403
+
+
+@enabled
+@pytest.mark.parametrize('auth', CLIENTS)
+@pytest.mark.parametrize('method', ['patch', 'put'])
+@pytest.mark.parametrize('forged_project', ['none', 'query', 'body', 'both'])
+def test_annotation_update_checks_actual_project_despite_forged_parameters(world, auth, method, forged_project):
+    editor = world.user(role='labeler', groups=[MALE])
+    annotation = world.annotations[MAIL]
+    original_editor = annotation.updated_by_id
+    allowed_project, allowed_task = world.projects[MALE], world.tasks[MALE]
+    url = f'/api/annotations/{annotation.id}/'
+    payload = {'result': [], 'lead_time': 123, 'completed_by': editor.id}
+    if forged_project in ('query', 'both'):
+        url += f'?project={allowed_project.id}&taskID={allowed_task.id}'
+    if forged_project in ('body', 'both'):
+        payload.update(project=allowed_project.id, task=allowed_task.id)
+
+    response = getattr(CLIENTS[auth](editor), method)(url, payload, format='json')
+
+    assert response.status_code == 404, response.content
+    annotation.refresh_from_db()
+    assert annotation.lead_time != 123
+    assert annotation.project_id == world.projects[MAIL].id
+    assert annotation.task_id == world.tasks[MAIL].id
+    assert annotation.completed_by_id == world.owner.id
+    assert annotation.updated_by_id == original_editor
+
+
+@pytest.mark.parametrize('auth', CLIENTS)
+@pytest.mark.parametrize('method', ['patch', 'put'])
+@pytest.mark.parametrize('mode', ['owner', 'admin', 'disabled'])
+def test_annotation_update_and_delete_keep_owner_admin_and_disabled_behavior(world, auth, method, mode):
+    editor = world.user(role='admin' if mode == 'admin' else 'labeler', groups=[MALE])
+    annotation = world.annotations[MAIL]
+    if mode == 'owner':
+        set_user_access(editor, groups=[MAIL])
+        annotation.completed_by = editor
+        annotation.save()
+    original_author = annotation.completed_by_id
+    client = CLIENTS[auth](editor)
+    url = f'/api/annotations/{annotation.id}/'
+
+    with override_settings(BASIR_ACCESS_CONTROL_ENABLED=mode != 'disabled'):
+        response = getattr(client, method)(url, {'result': [], 'lead_time': 7}, format='json')
+        assert response.status_code == 200, response.content
+        annotation.refresh_from_db()
+        assert annotation.lead_time == 7
+        assert annotation.completed_by_id == original_author
+        assert annotation.updated_by_id == editor.id
+        assert client.delete(url).status_code == 204
+
+
+@pytest.mark.parametrize('method', ['patch', 'put'])
+@pytest.mark.parametrize('access_control_enabled', [True, False])
+def test_annotation_author_remains_writable_for_admins_and_when_access_control_is_off(
+    world, method, access_control_enabled
+):
+    editor = world.user(role='admin' if access_control_enabled else 'labeler', groups=[MALE])
+    annotation = world.annotations[MAIL]
+    with override_settings(BASIR_ACCESS_CONTROL_ENABLED=access_control_enabled):
+        response = getattr(CLIENTS['session'](editor), method)(
+            f'/api/annotations/{annotation.id}/', {'result': [], 'completed_by': editor.id}, format='json'
+        )
+
+    assert response.status_code == 200, response.content
+    annotation.refresh_from_db()
+    assert annotation.completed_by_id == editor.id
+    assert annotation.updated_by_id == editor.id
 
 
 @enabled

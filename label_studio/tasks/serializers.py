@@ -4,6 +4,7 @@ import logging
 from collections.abc import MutableMapping
 
 import ujson as json
+from access_control.access import is_restricted
 from core.current_request import CurrentContext, get_current_request
 from core.feature_flags import flag_set
 from core.label_config import replace_task_data_undefined_with_config_field
@@ -198,6 +199,14 @@ class AnnotationSerializer(ImmutableOnUpdateMixin, FlexFieldsModelSerializer):
         help_text='Last user who updated this annotation',
     )
     unique_id = serializers.CharField(required=False, write_only=True)
+
+    def get_fields(self) -> dict:
+        fields = super().get_fields()
+        request = self.context.get('request')
+        if self.instance is not None and request is not None and is_restricted(request.user):
+            # Group edits preserve authorship; the existing update path records the editor in updated_by.
+            fields['completed_by'].read_only = True
+        return fields
 
     def create(self, *args, **kwargs):
         try:

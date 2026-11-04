@@ -133,8 +133,9 @@ docker compose up -d app
 1. Login page shows "Log in with Keycloak"; `male@mail.com` with its password is refused ("use Log in with
    Keycloak"); `admin@basir.local` logs in with its password and sees all projects with their group tags.
 2. A Keycloak user with `ls-labeler` + `ls-sightence-male` logs in, sees only the male projects, can label and
-   submit; no Create / Settings / Import / Export / Organization entries. Opening a female project's URL gives
-   "not found".
+   submit, and can update an existing annotation created by a shared account or another labeler. Its author
+   stays unchanged and `updated_by` records the editor; deleting another user's annotation is refused.
+   No Create / Settings / Import / Export / Organization entries. Opening a female project's URL gives "not found".
 3. Same with an `ls-sightence-female` and an `ls-mail-scanner` user; a Keycloak user without an `ls-` role is
    refused with a message.
 4. A Keycloak user with `ls-admin` sees everything.
