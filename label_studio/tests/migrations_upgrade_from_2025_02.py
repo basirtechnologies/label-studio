@@ -193,6 +193,41 @@ def verify_access_control(seeded):
         set_user_access(user, role='admin', groups=[])
         assert restrict_projects(Project.objects.all(), user).count() == 1
 
+    verify_merge(seeded)
+
+
+def verify_merge(seeded):
+    """Basir DW-907 part 2: merge a second organization into the upgraded one; IDs stay, the groups are set."""
+    from organizations.models import Organization
+    from projects.models import Project
+    from tasks.models import Task
+    from users.models import User
+
+    other_owner = User.objects.create_user(email='female@mail.com', password='x', username='female')
+    other = Organization.create_organization(created_by=other_owner, title='Label Studio female')
+    other_owner.active_organization = other
+    other_owner.save(update_fields=['active_organization'])
+    other_project = Project.objects.create(title='Female', organization=other, created_by=other_owner)
+    other_task = Task.objects.create(project=other_project, data={'text': 'x'})
+
+    target = seeded['organization']
+    call_command(
+        'basir_merge_organizations',
+        '--target-org',
+        str(target),
+        '--map',
+        f'{other.id}=ls-sightence-female',
+        f'{target}=ls-mail-scanner',
+    )
+    other_project.refresh_from_db()
+    assert (
+        other_project.organization_id == target and Task.objects.get(id=other_task.id).project_id == other_project.id
+    )
+    assert list(other_project.access_groups.values_list('name', flat=True)) == ['ls-sightence-female']
+    assert Organization.objects.filter(id=other.id).exists()
+    other_owner.refresh_from_db()
+    assert other_owner.active_organization_id == target
+
 
 def main():
     cleanup_first = '--cleanup-before-filter-parent' in sys.argv

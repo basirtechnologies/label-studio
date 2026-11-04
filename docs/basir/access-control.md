@@ -19,9 +19,11 @@ Django admin at `/admin/` is for LS admins only).
 
 ## Before switching it on
 
-1. Give the projects their access groups (Project settings → General → Access groups, the `access_groups` field of
-   `POST/PATCH /api/projects/`, or `basir_merge_organizations` in DW-907 part 2).
-2. Make the account behind the Label Server's API token an LS admin, and at least one person:
+1. Give the projects their access groups: `basir_merge_organizations` (below) does it while merging the
+   organizations; otherwise Project settings → General → Access groups, or the `access_groups` field of
+   `POST/PATCH /api/projects/`.
+2. Create the Label Server's service account (`basir_create_service_account`, below) and make at least one person
+   an LS admin:
 
    ```bash
    python manage.py basir_set_user_access --email admin@example.com --role admin
@@ -57,3 +59,37 @@ Django admin at `/admin/` is for LS admins only).
 
 ¹ While access control is off everyone can set them, and project responses only carry `access_groups` when asked
 for (`?include=access_groups`) or right after setting them, so the responses stay the upstream ones.
+
+## Merging the per-device organizations (DW-907 part 2)
+
+```bash
+python manage.py basir_merge_organizations --target-org 5 \
+    --map 7=ls-sightence-male 3=ls-sightence-female 5=ls-mail-scanner --dry-run
+python manage.py basir_merge_organizations --target-org 5 \
+    --map 7=ls-sightence-male 3=ls-sightence-female 5=ls-mail-scanner
+```
+
+- Moves every row with a ForeignKey to a mapped source organization (found through Django model meta: projects,
+  webhooks, labels, export formats, ML rows, ...) and the FSM history's `organization_id` to the target, in one
+  transaction. Per-organization settings (JWT settings, session policy) stay with their organization; the backup
+  of deleted rows (`core.DeletedRow`) keeps its value.
+- Moved projects get their source organization's groups; target projects without a group get the target's groups.
+- Members of a source organization become members of the target and switch their active organization; members
+  without a role become labelers with their organization's groups (`--owners-admin` makes the organizations'
+  creators LS admins instead). Existing LS admins keep their role.
+- If a source organization allowed legacy (or JWT) API tokens and the target didn't, the target now allows them:
+  existing tokens keep working.
+- Nothing is deleted, no ID changes, source organizations stay (empty). A second run changes nothing.
+  `--dry-run` prints the plan. Before/after counts are printed, and the merge rolls back if any total differs.
+- Stops before changing anything when two organizations hold rows that would break a unique constraint together
+  (e.g. two labels with the same title): rename one, then run again.
+
+## Label Server service account
+
+```bash
+python manage.py basir_create_service_account --email label-server@basir.local --organization 5
+```
+
+Creates (or updates) a local account without a usable password, LS role admin, member of the organization, and
+prints its legacy API token (`Authorization: Token <token>`). Re-running keeps the token; `--rotate-token` replaces
+it; `--token-only` prints just the token. Legacy API tokens are switched on for the organization if they were off.
