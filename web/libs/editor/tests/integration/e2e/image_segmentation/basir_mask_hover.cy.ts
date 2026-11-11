@@ -35,7 +35,7 @@ const highlighted = (page: number, object: number) =>
     expect(regions.map((r: any) => r.cleanId)).to.deep.equal([`mask-${page}-${object}`]);
   });
 
-describe("DW-894 active-page mask hover", () => {
+describe("DW-894 active-page mask hover", { browser: { family: "chromium" } }, () => {
   it("highlights only the hit mask, clears page/panel/task hover, and works after zoom and pan", () => {
     LabelStudio.params()
       .config(config)
@@ -53,8 +53,30 @@ describe("DW-894 active-page mask hover", () => {
       expect(win.Htx.annotationStore.selected.regionStore.regions.some((r: any) => r.highlighted)).to.equal(false),
     );
     // Confirmed baseline defect: panel-hovered mask remained highlighted after changing pages.
-    cy.get(".lsf-outliner-item__title").first().trigger("mouseenter");
-    cy.wait(75);
+    cy.get(".lsf-outliner-item__title")
+      .filter(':contains("Object")')
+      .first()
+      .closest(".lsf-tree-node-content-wrapper")
+      .then(($row) => {
+        // Use a native pointer event: synthetic mouseenter does not exercise React's hover path.
+        const win = $row[0].ownerDocument.defaultView!;
+        const row = $row[0].getBoundingClientRect();
+        const frame = window.top!.document.querySelector("iframe.aut-iframe")!.getBoundingClientRect();
+        const scale = frame.width / win.innerWidth;
+        return Cypress.automation("remote:debugger:protocol", {
+          command: "Input.dispatchMouseEvent",
+          params: {
+            type: "mouseMoved",
+            x: frame.left + (row.left + row.width / 2) * scale,
+            y: frame.top + (row.top + row.height / 2) * scale,
+          },
+        });
+      });
+    cy.window().should((win) => {
+      const highlighted = win.Htx.annotationStore.selected.regionStore.regions.filter((r: any) => r.highlighted);
+      expect(highlighted).to.have.length(1);
+      expect(highlighted[0].item_index).to.equal(0);
+    });
     cy.window().then((win) => win.Htx.annotationStore.selected.names.get("pages").setCurrentImage(1));
     LabelStudio.waitForImageReady();
     cy.window().should((win) =>
