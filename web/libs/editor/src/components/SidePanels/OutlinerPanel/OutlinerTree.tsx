@@ -33,6 +33,7 @@ import { RegionControlButton } from "../Components/RegionControlButton";
 import "./TreeView.prefix.css";
 import ResizeObserver from "../../../utils/resize-observer";
 import { RegionLabel } from "./RegionLabel";
+import { groupRegionTreeByPage, navigateToRegionPage } from "./pageGroups";
 
 const MIN_REGIONS_TREE_ROW_HEIGHT = 34;
 
@@ -112,15 +113,43 @@ const OutlinerInnerTreeComponent: FC<OutlinerInnerTreeProps> = observer(({ regio
   const eventHandlers = useEventHandlers();
   const selectedKeys = regions.selection.keys;
   const rootClass = cn("tree");
+  const pageKeys = regionsTree.filter((node) => node.isPageGroup).map((node) => node.key);
+  const pageSignature = pageKeys.join("\0");
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const seenPages = useRef<{ regions: any; keys: Set<string> }>({ regions, keys: new Set() });
+  useEffect(() => {
+    const previous = seenPages.current;
+    const newPages = pageKeys.filter((key) => previous.regions !== regions || !previous.keys.has(key));
+    if (newPages.length || previous.regions !== regions) {
+      setExpandedKeys((keys) => (previous.regions === regions ? [...new Set([...keys, ...newPages])] : pageKeys));
+    }
+    seenPages.current = { regions, keys: new Set(pageKeys) };
+  }, [regions, pageSignature]);
 
   return (
     <div className={cn("outliner-tree").toClassName()} ref={setRef}>
       {!!height && (
         <Tree
           key={regions.group}
-          draggable={regions.group === "manual" ? (node: any) => !node?.data?.isClassification : false}
+          draggable={
+            regions.group === "manual"
+              ? (node: any) => !node?.data?.isClassification && !node?.data?.isPageGroup
+              : false
+          }
+          allowDrop={({ dragNode, dropNode }: any) => {
+            if (dropNode.isPageGroup) return false;
+            const drag = dragNode.item;
+            const drop = dropNode.item;
+            if (!drag || !drop) return false;
+            return (
+              !drag.object?.multiImage ||
+              (drag.object === drop.object && (drag.item_index ?? 0) === (drop.item_index ?? 0))
+            );
+          }}
           multiple
           defaultExpandAll
+          expandedKeys={pageKeys.length ? expandedKeys : undefined}
+          onExpand={(keys) => setExpandedKeys(keys as string[])}
           defaultExpandParent
           autoExpandParent
           checkable={false}
@@ -175,7 +204,10 @@ const useDataTree = ({ regions, rootClass, footer }: any) => {
     };
   }, []);
 
-  const regionsTreeData = regions.getRegionsTree(processor);
+  const regionsTreeData = groupRegionTreeByPage(regions.getRegionsTree(processor));
+  for (const node of regionsTreeData) {
+    if (node.isPageGroup) node.title = titleRenderer;
+  }
 
   if (footer) {
     regionsTreeData.push({
@@ -199,6 +231,7 @@ const useEventHandlers = () => {
     if (!self?.annotation) return;
 
     const annotation = self.annotation;
+    navigateToRegionPage(self);
 
     if (multi) {
       const wasSelected = self.selected;
@@ -290,7 +323,7 @@ const useEventHandlers = () => {
   }, []);
 
   const onDrop = useCallback(({ node, dragNode, dropPosition, dropToGap }) => {
-    if (node.classification || node.isClassification) return false;
+    if (node.classification || node.isClassification || node.isPageGroup || !node.item) return false;
     if (dragNode.isClassification) return false;
     const dropKey = node.props.eventKey;
     const dragKey = dragNode.props.eventKey;
@@ -388,7 +421,7 @@ const RootTitle: FC<any> = observer(
     );
 
     const incomplete = item?.incomplete;
-    const showControls = !isClassification && item?.hideable !== false;
+    const showControls = !props.isPageGroup && !isClassification && item?.hideable !== false;
 
     return (
       <div className={cn("outliner-item").mod({ incomplete, classification: isClassification }).toClassName()}>
