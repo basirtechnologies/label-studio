@@ -16,17 +16,24 @@ def masks(updated=False):
     for page, (width, height) in enumerate([(64, 48), (80, 60)]):
         for obj in range(3):
             mask = np.zeros((height, width), dtype=np.uint8)
-            mask[5:20, 3 + obj * 18:12 + obj * 18] = 255
+            mask[5:20, 3 + obj * 18 : 12 + obj * 18] = 255
             if updated:
-                mask[15:30, 3 + obj * 18:12 + obj * 18] = 255
-                mask[35:40, 3 + obj * 18:8 + obj * 18] = 255
-                mask[8:10, 5 + obj * 18:7 + obj * 18] = 0
-            result.append({
-                'id': f'mask-{page}-{obj}', 'from_name': 'tag1', 'to_name': 'pages',
-                'type': 'brushlabels', 'item_index': page, 'original_width': width,
-                'original_height': height, 'image_rotation': 0,
-                'value': {'format': 'rle', 'rle': mask2rle(mask), 'brushlabels': ['Object']},
-            })
+                mask[15:30, 3 + obj * 18 : 12 + obj * 18] = 255
+                mask[35:40, 3 + obj * 18 : 8 + obj * 18] = 255
+                mask[8:10, 5 + obj * 18 : 7 + obj * 18] = 0
+            result.append(
+                {
+                    'id': f'mask-{page}-{obj}',
+                    'from_name': 'tag1',
+                    'to_name': 'pages',
+                    'type': 'brushlabels',
+                    'item_index': page,
+                    'original_width': width,
+                    'original_height': height,
+                    'image_rotation': 0,
+                    'value': {'format': 'rle', 'rle': mask2rle(mask), 'brushlabels': ['Object']},
+                }
+            )
     return result
 
 
