@@ -23,11 +23,11 @@ const annotation = () => {
 
 describe("DW-896 annotation-wide visibility shortcut", () => {
   it("uses one Ctrl chord on both platforms without Ctrl+H/Command+H browser conflicts", () => {
-    expect(keymap["region:visibility-all"].key).toBe("ctrl+shift+h");
-    expect(keymap["region:visibility-all"].mac).toBe("ctrl+shift+h");
+    expect(keymap["region:visibility-all"].key).toBe("ctrl+alt+h");
+    expect(keymap["region:visibility-all"].mac).toBe("ctrl+alt+h");
     expect(
       Object.entries(keymap).filter(
-        ([name, value]) => name !== "region:visibility-all" && value.key === "ctrl+shift+h",
+        ([name, value]) => name !== "region:visibility-all" && value.key === "ctrl+alt+h",
       ),
     ).toEqual([]);
   });

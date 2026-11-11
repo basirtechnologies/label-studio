@@ -31,7 +31,7 @@ describe("DW-896 visibility shortcut", () => {
       const regions = win.Htx.annotationStore.selected.regionStore.regions;
       regions[0].toggleHidden(); // mixed state: the shared action hides all first
       win.document.body.dispatchEvent(
-        new win.KeyboardEvent("keydown", { bubbles: true, key: "H", keyCode: 72, ctrlKey: true, shiftKey: true }),
+        new win.KeyboardEvent("keydown", { bubbles: true, key: "H", keyCode: 72, ctrlKey: true, altKey: true }),
       );
       expect(regions.every((r: any) => r.hidden)).to.equal(true);
       win.document.body.dispatchEvent(
@@ -40,7 +40,7 @@ describe("DW-896 visibility shortcut", () => {
           key: "H",
           keyCode: 72,
           ctrlKey: true,
-          shiftKey: true,
+          altKey: true,
           repeat: true,
         }),
       );
@@ -54,7 +54,7 @@ describe("DW-896 visibility shortcut", () => {
       win.document.body.appendChild(input);
       input.focus();
       input.dispatchEvent(
-        new win.KeyboardEvent("keydown", { bubbles: true, key: "H", keyCode: 72, ctrlKey: true, shiftKey: true }),
+        new win.KeyboardEvent("keydown", { bubbles: true, key: "H", keyCode: 72, ctrlKey: true, altKey: true }),
       );
       expect(ann.regionStore.regions.every((r: any) => !r.hidden)).to.equal(true);
       input.remove();
