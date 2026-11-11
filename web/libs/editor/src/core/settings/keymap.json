@@ -125,8 +125,8 @@
     "description": "Toggle selected region visibility"
   },
   "region:visibility-all": {
-    "key": "ctrl+h",
-    "mac": "command+h",
+    "key": "ctrl+shift+h",
+    "mac": "ctrl+shift+h",
     "description": "Toggle all regions visibility"
   },
   "region:lock": {
