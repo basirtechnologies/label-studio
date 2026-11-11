@@ -1,3 +1,4 @@
+import { brushPointer as pointer } from "../../helpers/brushScene";
 import { decode } from "@thi.ng/rle-pack";
 import { LabelStudio } from "@humansignal/frontend-test/helpers/LSF";
 
@@ -8,34 +9,6 @@ const svg = (w: number, h: number) =>
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="white"/></svg>`)}`;
 const data = { pages: [svg(400, 300), svg(600, 450)] };
 
-// Native events exercise Konva hit testing and React hover during a real held stroke.
-const pointer = (x: number, y: number, type = "mouseMoved", held = false) => {
-  cy.window().then((win) => {
-    const image = win.Htx.annotationStore.selected.names.get("pages");
-    const point = image.stageRef.getAbsoluteTransform().point({
-      x: (image.stageWidth * x) / 400,
-      y: (image.stageHeight * y) / 300,
-    });
-    const rect = image.stageRef.content.getBoundingClientRect();
-    const frame = window.top!.document.querySelector("iframe.aut-iframe")!.getBoundingClientRect();
-    const scale = frame.width / win.innerWidth;
-    return Cypress.automation("remote:debugger:protocol", {
-      command: "Input.dispatchMouseEvent",
-      params: {
-        type,
-        x: frame.left + (rect.left + point.x) * scale,
-        y: frame.top + (rect.top + point.y) * scale,
-        button: type === "mouseMoved" ? "none" : "left",
-        buttons: held ? 1 : 0,
-        clickCount: type === "mouseMoved" ? 0 : 1,
-      },
-    });
-  });
-  // Let React effects and Konva's scheduled redraw run BEFORE examining live pixels.
-  cy.window().then(
-    (win) => new Promise((resolve) => win.requestAnimationFrame(() => win.requestAnimationFrame(resolve))),
-  );
-};
 const livePixels = (xs: number[]) => {
   cy.window().should((win) => {
     const ann = win.Htx.annotationStore.selected;

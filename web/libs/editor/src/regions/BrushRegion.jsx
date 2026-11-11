@@ -254,8 +254,6 @@ const Model = types
   .actions((self) => {
     let pathPoints;
     let cachedPoints;
-    let lastPointX = -1;
-    let lastPointY = -1;
     let maskImage;
 
     return {
@@ -334,41 +332,19 @@ const Model = types
         return self.parent.zoomOriginalCoords([x, y]);
       },
 
-      preDraw(x, y) {
-        if (!self.layerRef) return;
-        const layer = self.layerRef.getLayer();
-        if (!layer) return;
-        const ctx = layer.canvas.context;
+      getPendingStroke() {
+        if (!pathPoints || !cachedPoints?.length) return null;
+        return {
+          points: cachedPoints.map((c, i) => c / (i % 2 === 0 ? self.scaleX : self.scaleY)),
+          strokeWidth: pathPoints.strokeWidth,
+          compositeOperation: pathPoints.compositeOperation,
+        };
+      },
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(
-          self.parent.alignmentOffset.x,
-          self.parent.alignmentOffset.y,
-          self.parent.stageWidth * self.parent.stageScale,
-          self.parent.stageHeight * self.parent.stageScale,
-        );
-        ctx.clip();
-        // the part of the path to draw now, in screen coordinates
-        const path = [];
-        if (cachedPoints.length / 2 > 3) {
-          path.push(...self.prepareCoords([lastPointX, lastPointY]));
-        } else {
-          for (let i = 0; i < cachedPoints.length; i += 2) {
-            path.push(...self.prepareCoords([cachedPoints[i], cachedPoints[i + 1]]));
-          }
-        }
-        path.push(...self.prepareCoords([x, y]));
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.lineWidth = pathPoints.strokeWidth * self.scaleX * self.parent.stageScale;
-        ctx.strokeStyle = self.strokeColor;
-        ctx.globalCompositeOperation = pathPoints.compositeOperation;
-        // a click without movement is drawn as a dot instead of an (invisible) zero-length line
-        Canvas.strokeBrushPath(ctx, path);
-        ctx.restore();
-        lastPointX = x;
-        lastPointY = y;
+      preDraw() {
+        // Let the scene renderer compose pending and committed pixels at full alpha,
+        // then apply this mask's opacity once. Coalesce pointer updates to animation frames.
+        self.layerRef?.getLayer()?.batchDraw();
       },
 
       beginPath({ type, strokeWidth, opacity = self.opacity }) {
@@ -381,9 +357,9 @@ const Model = types
       },
 
       addPoint(x, y) {
-        self.preDraw(x, y);
         cachedPoints.push(x);
         cachedPoints.push(y);
+        self.preDraw();
       },
 
       endPath() {
@@ -399,7 +375,6 @@ const Model = types
         self.touches.push(pathPoints);
         self.currentTouch = pathPoints;
         pathPoints.setPoints(cachedPoints);
-        lastPointX = lastPointY = -1;
         pathPoints = null;
         cachedPoints = [];
 
@@ -548,7 +523,8 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
 
   const sceneFunc = useCallback(
     (context) => {
-      const hasTouches = pointsList.length > 0;
+      const pendingStroke = item.getPendingStroke();
+      const hasTouches = pointsList.length > 0 || !!pendingStroke;
       const hasImage = !!image;
       if (!hasImage && !hasTouches) return;
 
@@ -585,6 +561,8 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
       }
       const offCtx = offscreenRef.current.getContext("2d");
 
+      // A previous frame may have left a zoom/pan transform on this reusable canvas.
+      offCtx.setTransform(1, 0, 0, 1, 0, 0);
       offCtx.clearRect(0, 0, w, h);
 
       const currentTransform = nativeCtx.getTransform();
@@ -603,6 +581,10 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
           compositeOperation: points.compositeOperation,
         });
       });
+
+      if (pendingStroke) {
+        drawLine(offCtx, { ...pendingStroke, strokeColor: item.strokeColor });
+      }
 
       nativeCtx.save();
       nativeCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -721,7 +703,7 @@ const HtxBrushView = ({ item, setShapeRef }) => {
 
   useEffect(() => {
     // A tool change or a completed stroke may leave a previous hover behind.
-    // Clear it only after drawing ends: live points are not in the scene graph until endPath.
+    // Clear it after drawing ends so hover cannot change the mask's opacity mid-stroke.
     if (isAlive(item) && !isDrawing && skipInteractions) item.setHighlight(false);
   }, [item, isDrawing, skipInteractions]);
 
@@ -756,8 +738,7 @@ const HtxBrushView = ({ item, setShapeRef }) => {
           }}
           onMouseOver={() => {
             if (store.annotationStore.selected !== item.annotation) return;
-            // preDraw paints pending points directly on the scene canvas. A hover-driven
-            // opacity redraw would erase them before endPath commits the stroke.
+            // Painting must not change mask opacity when crossing its existing pixels.
             if (!item.annotation.isDrawing && !parent.getSkipInteractions?.()) {
               item.annotation.regionStore.unhighlightAll();
               item.setHighlight(true);
