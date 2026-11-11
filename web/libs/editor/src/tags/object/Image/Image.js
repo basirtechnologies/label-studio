@@ -796,6 +796,7 @@ const Model = types
         self.carriedView = self.captureCurrentView();
       }
 
+      self.annotation?.regionStore.unhighlightAll?.();
       self.currentImage = index;
       self.currentImageEntity = self.findImageEntity(index);
       self.preloadImages();

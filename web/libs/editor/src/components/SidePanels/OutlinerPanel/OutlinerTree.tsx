@@ -17,6 +17,7 @@ import {
   memo,
 } from "react";
 import Registry from "../../../core/Registry";
+import { isAlive } from "mobx-state-tree";
 import { PER_REGION_MODES } from "../../../mixins/PerRegionModes";
 import { cn } from "../../../utils/bem";
 import { flatten, isDefined, isMacOS } from "../../../utils/utilities";
@@ -109,7 +110,7 @@ const OutlinerInnerTreeComponent: FC<OutlinerInnerTreeProps> = observer(({ regio
     blockRef.current = ref;
     setHeight(ref?.clientHeight || 1);
   }, []);
-  const eventHandlers = useEventHandlers();
+  const eventHandlers = useEventHandlers(regions);
   const selectedKeys = regions.selection.keys;
   const rootClass = cn("tree");
 
@@ -189,7 +190,7 @@ const useDataTree = ({ regions, rootClass, footer }: any) => {
   return regionsTreeData;
 };
 
-const useEventHandlers = () => {
+const useEventHandlers = (regions: any) => {
   const onSelect = useCallback((_, evt) => {
     const multi = evt.nativeEvent.ctrlKey || (isMacOS() && evt.nativeEvent.metaKey);
     const { node } = evt;
@@ -244,19 +245,27 @@ const useEventHandlers = () => {
   const highlightedRef = useRef<any>();
   const hoverTimeoutRef = useRef<number>();
 
-  const onMouseEnter = useCallback(({ node }: any) => {
-    if (hoverTimeoutRef.current) {
-      window.clearTimeout(hoverTimeoutRef.current);
-    }
-
-    hoverTimeoutRef.current = window.setTimeout(() => {
-      if (highlightedRef.current) {
-        highlightedRef.current?.setHighlight(false);
+  const onMouseEnter = useCallback(
+    ({ node }: any) => {
+      if (hoverTimeoutRef.current) {
+        window.clearTimeout(hoverTimeoutRef.current);
       }
-      node.item?.setHighlight(true);
-      highlightedRef.current = node.item;
-    }, 50);
-  }, []);
+
+      hoverTimeoutRef.current = window.setTimeout(() => {
+        const region = node.item;
+        if (!region || !isAlive(region)) return;
+        if (region.annotation && region.annotation !== regions.annotation) return;
+        if (region.object?.isMultiItem && (region.item_index ?? 0) !== region.object.currentItemIndex) return;
+        if (highlightedRef.current) {
+          highlightedRef.current?.setHighlight(false);
+        }
+        regions.unhighlightAll?.();
+        region.setHighlight(true);
+        highlightedRef.current = region;
+      }, 50);
+    },
+    [regions],
+  );
 
   const onMouseLeave = useCallback(({ node }: any) => {
     if (hoverTimeoutRef.current) {
@@ -268,6 +277,15 @@ const useEventHandlers = () => {
     }
     highlightedRef.current = undefined;
   }, []);
+
+  useEffect(
+    () => () => {
+      if (hoverTimeoutRef.current) window.clearTimeout(hoverTimeoutRef.current);
+      if (highlightedRef.current && isAlive(highlightedRef.current)) highlightedRef.current.setHighlight(false);
+      highlightedRef.current = undefined;
+    },
+    [regions],
+  );
 
   // This is a necessary trick since the virtual mode may prevent emitting MouseLeave event due to the node couldn't exist at this moment
   const onScroll = onMouseLeave;
