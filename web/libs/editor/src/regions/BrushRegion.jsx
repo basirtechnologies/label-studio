@@ -1,13 +1,14 @@
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Group, Shape } from "react-konva";
 import { observer } from "mobx-react";
-import { getParent, getRoot, getSnapshot, getType, hasParent, isAlive, types } from "mobx-state-tree";
+import { getParent, getRoot, getSnapshot, hasParent, isAlive, types } from "mobx-state-tree";
 import { decode as rleDecode } from "@thi.ng/rle-pack";
 
 import Registry from "../core/Registry";
 import NormalizationMixin from "../mixins/Normalization";
 import RegionsMixin from "../mixins/Regions";
 import Canvas from "../utils/canvas";
+import { brushHitCanvas } from "../utils/brushHitCanvas";
 
 import { ImageViewContext } from "../components/ImageView/ImageViewContext";
 import { LabelOnMask } from "../components/ImageView/LabelOnRegion";
@@ -525,13 +526,6 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
   const offscreenRef = useRef(null);
   const imageHitDataRef = useRef(null);
 
-  // Drop the cached hit canvas whenever the bitmap reference changes (RLE
-  // update, recolor, history detach). Otherwise hit-testing would keep
-  // matching against a stale image after re-render.
-  useEffect(() => {
-    imageHitDataRef.current = null;
-  }, [image]);
-
   useEffect(() => {
     return () => {
       offscreenRef.current = null;
@@ -629,28 +623,9 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
       // so Konva's hit canvas matches this shape on click. Cached per image
       // reference because getImageData/putImageData is expensive.
       if (image && w > 1 && h > 1) {
-        if (!imageHitDataRef.current) {
-          const offscreen = document.createElement("canvas");
-
-          offscreen.width = w;
-          offscreen.height = h;
-          const offCtx = offscreen.getContext("2d");
-
-          offCtx.drawImage(image, 0, 0, w, h);
-          const imageData = offCtx.getImageData(0, 0, w, h);
-          const colorParts = colorToRGBAArray(shape.colorKey);
-
-          for (let i = imageData.data.length / 4 - 1; i >= 0; i--) {
-            if (imageData.data[i * 4 + 3] > 0) {
-              for (let k = 0; k < 3; k++) {
-                imageData.data[i * 4 + k] = colorParts[k];
-              }
-            }
-          }
-          offCtx.putImageData(imageData, 0, 0);
-          imageHitDataRef.current = offscreen;
-        }
-        context.drawImage(imageHitDataRef.current, 0, 0, w, h);
+        // Validate synchronously: effects run after Konva may already have drawn its hit canvas.
+        imageHitDataRef.current = brushHitCanvas(imageHitDataRef.current, image, w, h, shape.colorKey);
+        context.drawImage(imageHitDataRef.current.canvas, 0, 0, w, h);
       }
 
       // Stroke-derived hit area. Eraser strokes paint white in source-over
@@ -683,11 +658,14 @@ const HtxBrushView = ({ item, setShapeRef }) => {
     // - maskDataURL - an RGBA mask encoded as an image data URL that can be directly placed into
     //  an image without having to go through an RLE encode/decode loop to save performance for tools
     //  that dynamically produce image masks.
+    let cancelled = false;
+    setImage(undefined);
     const prepareImage = async () => {
       const hasRle = item.rle && (!Array.isArray(item.rle) || item.rle.length > 0);
       if (!hasRle && !item.maskDataURL) return;
       if (!item.parent || item.parent.naturalWidth <= 1 || item.parent.naturalHeight <= 1) return;
 
+      item.setReady(false);
       let img;
 
       if (item.maskDataURL) {
@@ -698,13 +676,18 @@ const HtxBrushView = ({ item, setShapeRef }) => {
 
       if (img) {
         img.onload = () => {
+          if (cancelled || !isAlive(item)) return;
           setImage(img);
           item.setReady(true);
         };
       }
     };
     prepareImage();
+    return () => {
+      cancelled = true;
+    };
   }, [
+    item,
     item.rle,
     item.maskDataURL,
     item.maskBoundsMinX,
@@ -763,15 +746,13 @@ const HtxBrushView = ({ item, setShapeRef }) => {
             }
           }}
           onMouseOver={() => {
-            if (store.annotationStore.selected?.isLinkingMode) {
-              item.setHighlight(true);
-            }
+            if (store.annotationStore.selected !== item.annotation) return;
+            item.annotation.regionStore.unhighlightAll();
+            item.setHighlight(true);
             item.updateCursor(true);
           }}
           onMouseOut={() => {
-            if (store.annotationStore.selected?.isLinkingMode) {
-              item.setHighlight(false);
-            }
+            item.setHighlight(false);
             item.updateCursor();
           }}
           onClick={(e) => {
