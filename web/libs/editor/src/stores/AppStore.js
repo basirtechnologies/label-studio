@@ -1,5 +1,6 @@
 /* global LSF_VERSION */
 
+import { toggleAnnotationVisibility } from "../utils/regionVisibility";
 import { destroy, detach, flow, getEnv, getParent, getSnapshot, isRoot, types, walk } from "mobx-state-tree";
 
 import { uniqBy } from "@humansignal/core/lib/utils/lodash-replacements";
@@ -561,9 +562,10 @@ export default types
         }
       });
 
-      hotkeys.addNamed("region:visibility-all", () => {
-        const { selected } = self.annotationStore;
-        selected.regionStore.toggleVisibility();
+      hotkeys.addNamed("region:visibility-all", (event) => {
+        // Labeling-config hotkeys keep priority, as they do for tool shortcuts.
+        if (Hotkey.isConfigKey(hotkeys.lookupKey("region:visibility-all"))) return;
+        toggleAnnotationVisibility(self.annotationStore.selected, event);
       });
 
       hotkeys.addNamed("annotation:undo", () => {
