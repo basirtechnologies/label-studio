@@ -30,3 +30,7 @@ Brush hover now respects the editor's existing `getSkipInteractions` policy (bru
 The standalone browser test covers editor submission callbacks and JSON reopening; backend mask-coverage tests separately cover actual POST/PATCH/PUT/GET transport and stored pixel coverage, including author/audit and webhook rollback regressions. No production annotations are edited or repaired.
 
 DW-892 page grouping and DW-896 visibility remain in the combined testing branch. User testing approved those two features. The original intermittent DW-894 and DW-895 issues remain unresolved and their PRs remain drafts; fixing this regression is not evidence that those separate reports are resolved.
+
+## Subsequent opacity correction
+
+The mechanism above describes the implementation at sha-8bbd0b9. A later baseline comparison found that direct pending-stroke drawing also bypassed mask opacity, already in sha-0a8114b. Pending strokes now participate in the normal per-mask scene compositor and survive redraws before mouse-up. The hover guards from this preview fix remain in place. See [editor-brush-opacity.md](editor-brush-opacity.md) for the separate color investigation and tests.
