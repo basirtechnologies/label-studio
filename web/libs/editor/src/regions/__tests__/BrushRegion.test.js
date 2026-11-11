@@ -786,6 +786,29 @@ describe("BrushRegion", () => {
       setHighlightSpy.mockRestore();
     });
 
+    it("does not mutate hover state on mask entry or exit during an active stroke", () => {
+      const drawingRoot = TestRoot.create({
+        annotationStore: { selected: createMockAnnotation({ isDrawing: true }) },
+        settings: { showLabels: false },
+        image: { id: "img1", name: "image" },
+        region: { id: "drawing-brush", pid: "drawing-brush", object: "image", touches: [] },
+      });
+      drawingRoot.image.setAnnotation(drawingRoot.annotationStore.selected);
+      stubRegionObjectRefs(drawingRoot);
+      drawingRoot.region.setHighlight(true);
+      const setHighlightSpy = spyOn(drawingRoot.region, "setHighlight");
+      const { getAllByTestId } = render(<HtxBrush item={drawingRoot.region} />);
+      const group = getAllByTestId("konva-group").find((g) => g.getAttribute("name") === "segmentation");
+      act(() => {
+        fireEvent.mouseOver(group);
+        fireEvent.mouseOut(group);
+      });
+      expect(setHighlightSpy).not.toHaveBeenCalled();
+      expect(drawingRoot.annotationStore.selected.regionStore.unhighlightAll).not.toHaveBeenCalled();
+      expect(drawingRoot.region.highlighted).toBe(true);
+      setHighlightSpy.mockRestore();
+    });
+
     it("handles Group onMouseDown when isLinkingMode without throwing", () => {
       const linkingRoot = TestRoot.create({
         annotationStore: { selected: { ...createMockAnnotation(), isLinkingMode: true } },

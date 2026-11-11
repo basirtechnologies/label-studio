@@ -716,6 +716,15 @@ const HtxBrushView = ({ item, setShapeRef }) => {
   );
 
   const parent = item.parent;
+  const isDrawing = isAlive(item) && item.annotation?.isDrawing;
+  const skipInteractions = parent?.getSkipInteractions?.() ?? false;
+
+  useEffect(() => {
+    // A tool change or a completed stroke may leave a previous hover behind.
+    // Clear it only after drawing ends: live points are not in the scene graph until endPath.
+    if (isAlive(item) && !isDrawing && skipInteractions) item.setHighlight(false);
+  }, [item, isDrawing, skipInteractions]);
+
   if (!parent) return null;
 
   const clip = {
@@ -747,12 +756,16 @@ const HtxBrushView = ({ item, setShapeRef }) => {
           }}
           onMouseOver={() => {
             if (store.annotationStore.selected !== item.annotation) return;
-            item.annotation.regionStore.unhighlightAll();
-            item.setHighlight(true);
+            // preDraw paints pending points directly on the scene canvas. A hover-driven
+            // opacity redraw would erase them before endPath commits the stroke.
+            if (!item.annotation.isDrawing && !parent.getSkipInteractions?.()) {
+              item.annotation.regionStore.unhighlightAll();
+              item.setHighlight(true);
+            }
             item.updateCursor(true);
           }}
           onMouseOut={() => {
-            item.setHighlight(false);
+            if (!item.annotation.isDrawing) item.setHighlight(false);
             item.updateCursor();
           }}
           onClick={(e) => {
