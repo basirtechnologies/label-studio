@@ -17,7 +17,8 @@ import { Dropdown } from "@humansignal/ui";
 // @ts-ignore
 import { Menu } from "../../../common/Menu/Menu";
 import { cn } from "../../../utils/bem";
-import { emitRegionVisibilityToggled } from "../../../utils/labelingTelemetry";
+import { toggleAnnotationVisibility } from "../../../utils/regionVisibility";
+import { hotkeyLabel } from "../../../utils/rejectHotkeys";
 import { SidePanelsContext } from "../SidePanelsContext";
 import "./ViewControls.prefix.css";
 import { observer } from "mobx-react";
@@ -292,12 +293,7 @@ const ToggleRegionsVisibilityButton = observer<FC<ToggleRegionsVisibilityButton>
     (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const annotation = regions?.annotation;
-      emitRegionVisibilityToggled(annotation?.store, annotation, {
-        visible: Boolean(regions?.isAllHidden),
-        scope: "all",
-      });
-      regions.toggleVisibility();
+      toggleAnnotationVisibility(regions?.annotation);
     },
     [regions],
   );
@@ -313,7 +309,7 @@ const ToggleRegionsVisibilityButton = observer<FC<ToggleRegionsVisibilityButton>
       disabled={isDisabled}
       onClick={toggleRegionsVisibility}
       aria-label={isAllHidden ? "Show all regions" : "Hide all regions"}
-      tooltip={isAllHidden ? "Show all regions" : "Hide all regions"}
+      tooltip={`${isAllHidden ? "Show all regions" : "Hide all regions"} (${hotkeyLabel("region:visibility-all")})`}
     >
       {isAllHidden ? (
         <IconOutlinerEyeClosed width={16} height={16} />
