@@ -1,13 +1,14 @@
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Group, Shape } from "react-konva";
 import { observer } from "mobx-react";
-import { getParent, getRoot, getSnapshot, getType, hasParent, isAlive, types } from "mobx-state-tree";
+import { getParent, getRoot, getSnapshot, hasParent, isAlive, types } from "mobx-state-tree";
 import { decode as rleDecode } from "@thi.ng/rle-pack";
 
 import Registry from "../core/Registry";
 import NormalizationMixin from "../mixins/Normalization";
 import RegionsMixin from "../mixins/Regions";
 import Canvas from "../utils/canvas";
+import { brushHitCanvas } from "../utils/brushHitCanvas";
 
 import { ImageViewContext } from "../components/ImageView/ImageViewContext";
 import { LabelOnMask } from "../components/ImageView/LabelOnRegion";
@@ -253,8 +254,6 @@ const Model = types
   .actions((self) => {
     let pathPoints;
     let cachedPoints;
-    let lastPointX = -1;
-    let lastPointY = -1;
     let maskImage;
 
     return {
@@ -333,41 +332,19 @@ const Model = types
         return self.parent.zoomOriginalCoords([x, y]);
       },
 
-      preDraw(x, y) {
-        if (!self.layerRef) return;
-        const layer = self.layerRef.getLayer();
-        if (!layer) return;
-        const ctx = layer.canvas.context;
+      getPendingStroke() {
+        if (!pathPoints || !cachedPoints?.length) return null;
+        return {
+          points: cachedPoints.map((c, i) => c / (i % 2 === 0 ? self.scaleX : self.scaleY)),
+          strokeWidth: pathPoints.strokeWidth,
+          compositeOperation: pathPoints.compositeOperation,
+        };
+      },
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(
-          self.parent.alignmentOffset.x,
-          self.parent.alignmentOffset.y,
-          self.parent.stageWidth * self.parent.stageScale,
-          self.parent.stageHeight * self.parent.stageScale,
-        );
-        ctx.clip();
-        // the part of the path to draw now, in screen coordinates
-        const path = [];
-        if (cachedPoints.length / 2 > 3) {
-          path.push(...self.prepareCoords([lastPointX, lastPointY]));
-        } else {
-          for (let i = 0; i < cachedPoints.length; i += 2) {
-            path.push(...self.prepareCoords([cachedPoints[i], cachedPoints[i + 1]]));
-          }
-        }
-        path.push(...self.prepareCoords([x, y]));
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.lineWidth = pathPoints.strokeWidth * self.scaleX * self.parent.stageScale;
-        ctx.strokeStyle = self.strokeColor;
-        ctx.globalCompositeOperation = pathPoints.compositeOperation;
-        // a click without movement is drawn as a dot instead of an (invisible) zero-length line
-        Canvas.strokeBrushPath(ctx, path);
-        ctx.restore();
-        lastPointX = x;
-        lastPointY = y;
+      preDraw() {
+        // Let the scene renderer compose pending and committed pixels at full alpha,
+        // then apply this mask's opacity once. Coalesce pointer updates to animation frames.
+        self.layerRef?.getLayer()?.batchDraw();
       },
 
       beginPath({ type, strokeWidth, opacity = self.opacity }) {
@@ -380,9 +357,9 @@ const Model = types
       },
 
       addPoint(x, y) {
-        self.preDraw(x, y);
         cachedPoints.push(x);
         cachedPoints.push(y);
+        self.preDraw();
       },
 
       endPath() {
@@ -398,7 +375,6 @@ const Model = types
         self.touches.push(pathPoints);
         self.currentTouch = pathPoints;
         pathPoints.setPoints(cachedPoints);
-        lastPointX = lastPointY = -1;
         pathPoints = null;
         cachedPoints = [];
 
@@ -525,13 +501,6 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
   const offscreenRef = useRef(null);
   const imageHitDataRef = useRef(null);
 
-  // Drop the cached hit canvas whenever the bitmap reference changes (RLE
-  // update, recolor, history detach). Otherwise hit-testing would keep
-  // matching against a stale image after re-render.
-  useEffect(() => {
-    imageHitDataRef.current = null;
-  }, [image]);
-
   useEffect(() => {
     return () => {
       offscreenRef.current = null;
@@ -554,7 +523,8 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
 
   const sceneFunc = useCallback(
     (context) => {
-      const hasTouches = pointsList.length > 0;
+      const pendingStroke = item.getPendingStroke();
+      const hasTouches = pointsList.length > 0 || !!pendingStroke;
       const hasImage = !!image;
       if (!hasImage && !hasTouches) return;
 
@@ -591,6 +561,8 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
       }
       const offCtx = offscreenRef.current.getContext("2d");
 
+      // A previous frame may have left a zoom/pan transform on this reusable canvas.
+      offCtx.setTransform(1, 0, 0, 1, 0, 0);
       offCtx.clearRect(0, 0, w, h);
 
       const currentTransform = nativeCtx.getTransform();
@@ -609,6 +581,10 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
           compositeOperation: points.compositeOperation,
         });
       });
+
+      if (pendingStroke) {
+        drawLine(offCtx, { ...pendingStroke, strokeColor: item.strokeColor });
+      }
 
       nativeCtx.save();
       nativeCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -629,28 +605,9 @@ const HtxBrushLayer = observer(({ item, image, setShapeRef, pointsList }) => {
       // so Konva's hit canvas matches this shape on click. Cached per image
       // reference because getImageData/putImageData is expensive.
       if (image && w > 1 && h > 1) {
-        if (!imageHitDataRef.current) {
-          const offscreen = document.createElement("canvas");
-
-          offscreen.width = w;
-          offscreen.height = h;
-          const offCtx = offscreen.getContext("2d");
-
-          offCtx.drawImage(image, 0, 0, w, h);
-          const imageData = offCtx.getImageData(0, 0, w, h);
-          const colorParts = colorToRGBAArray(shape.colorKey);
-
-          for (let i = imageData.data.length / 4 - 1; i >= 0; i--) {
-            if (imageData.data[i * 4 + 3] > 0) {
-              for (let k = 0; k < 3; k++) {
-                imageData.data[i * 4 + k] = colorParts[k];
-              }
-            }
-          }
-          offCtx.putImageData(imageData, 0, 0);
-          imageHitDataRef.current = offscreen;
-        }
-        context.drawImage(imageHitDataRef.current, 0, 0, w, h);
+        // Validate synchronously: effects run after Konva may already have drawn its hit canvas.
+        imageHitDataRef.current = brushHitCanvas(imageHitDataRef.current, image, w, h, shape.colorKey);
+        context.drawImage(imageHitDataRef.current.canvas, 0, 0, w, h);
       }
 
       // Stroke-derived hit area. Eraser strokes paint white in source-over
@@ -683,11 +640,14 @@ const HtxBrushView = ({ item, setShapeRef }) => {
     // - maskDataURL - an RGBA mask encoded as an image data URL that can be directly placed into
     //  an image without having to go through an RLE encode/decode loop to save performance for tools
     //  that dynamically produce image masks.
+    let cancelled = false;
+    setImage(undefined);
     const prepareImage = async () => {
       const hasRle = item.rle && (!Array.isArray(item.rle) || item.rle.length > 0);
       if (!hasRle && !item.maskDataURL) return;
       if (!item.parent || item.parent.naturalWidth <= 1 || item.parent.naturalHeight <= 1) return;
 
+      item.setReady(false);
       let img;
 
       if (item.maskDataURL) {
@@ -698,13 +658,18 @@ const HtxBrushView = ({ item, setShapeRef }) => {
 
       if (img) {
         img.onload = () => {
+          if (cancelled || !isAlive(item)) return;
           setImage(img);
           item.setReady(true);
         };
       }
     };
     prepareImage();
+    return () => {
+      cancelled = true;
+    };
   }, [
+    item,
     item.rle,
     item.maskDataURL,
     item.maskBoundsMinX,
@@ -733,6 +698,15 @@ const HtxBrushView = ({ item, setShapeRef }) => {
   );
 
   const parent = item.parent;
+  const isDrawing = isAlive(item) && item.annotation?.isDrawing;
+  const skipInteractions = parent?.getSkipInteractions?.() ?? false;
+
+  useEffect(() => {
+    // A tool change or a completed stroke may leave a previous hover behind.
+    // Clear it after drawing ends so hover cannot change the mask's opacity mid-stroke.
+    if (isAlive(item) && !isDrawing && skipInteractions) item.setHighlight(false);
+  }, [item, isDrawing, skipInteractions]);
+
   if (!parent) return null;
 
   const clip = {
@@ -763,15 +737,16 @@ const HtxBrushView = ({ item, setShapeRef }) => {
             }
           }}
           onMouseOver={() => {
-            if (store.annotationStore.selected?.isLinkingMode) {
+            if (store.annotationStore.selected !== item.annotation) return;
+            // Painting must not change mask opacity when crossing its existing pixels.
+            if (!item.annotation.isDrawing && !parent.getSkipInteractions?.()) {
+              item.annotation.regionStore.unhighlightAll();
               item.setHighlight(true);
             }
             item.updateCursor(true);
           }}
           onMouseOut={() => {
-            if (store.annotationStore.selected?.isLinkingMode) {
-              item.setHighlight(false);
-            }
+            if (!item.annotation.isDrawing) item.setHighlight(false);
             item.updateCursor();
           }}
           onClick={(e) => {

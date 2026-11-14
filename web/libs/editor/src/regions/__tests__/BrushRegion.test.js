@@ -8,7 +8,7 @@
 
 import { render, fireEvent, act } from "@testing-library/react";
 import { isStateTreeNode, types } from "mobx-state-tree";
-const ff = mockFF();
+mockFF();
 
 let mockBrushImageRef = null;
 mockModule("../../utils/canvas", () => ({
@@ -93,7 +93,7 @@ function createMockAnnotation(overrides = {}) {
     autosave: mock(),
     isReadOnly: () => false,
     unselectAll: mock(),
-    regionStore: { isSelected: () => false },
+    regionStore: { isSelected: () => false, unhighlightAll: mock() },
     ...overrides,
   };
 }
@@ -534,118 +534,49 @@ describe("BrushRegion", () => {
     });
   });
 
-  describe("preDraw", () => {
-    it("preDraw does nothing when layerRef is not set", () => {
+  describe("pending stroke preview", () => {
+    it("retains pending points even before the region has a layer", () => {
       region.beginPath({ type: "add", strokeWidth: 25 });
-      expect(() => region.preDraw(5, 5)).not.toThrow();
+      expect(() => region.addPoint(5, 5)).not.toThrow();
+      expect(region.getPendingStroke()).toEqual({ points: [5, 5], strokeWidth: 25, compositeOperation: "source-over" });
+      expect(region.touches).toHaveLength(0);
     });
 
-    it("preDraw uses clip rect from alignment and stage scale", () => {
-      ff.reset();
-      const ctx = {
-        save: mock(),
-        restore: mock(),
-        beginPath: mock(),
-        moveTo: mock(),
-        lineTo: mock(),
-        rect: mock(),
-        clip: mock(),
-        lineCap: "",
-        lineJoin: "",
-        lineWidth: 0,
-        strokeStyle: "",
-        globalCompositeOperation: "",
-        stroke: mock(),
-        arc: mock(),
-        fill: mock(),
-      };
-      const mockRef = {
-        getLayer: () => ({ canvas: { context: ctx } }),
-        canvas: { _canvas: { style: {} }, context: ctx, width: 100, height: 100 },
-      };
-      region.setLayerRef(mockRef);
+    it("requests a scene redraw and exposes the complete uncommitted path", () => {
+      const batchDraw = mock();
+      region.setLayerRef({ getLayer: () => ({ batchDraw }) });
       region.beginPath({ type: "add", strokeWidth: 25 });
-      region.preDraw(5, 5);
-      expect(ctx.rect).toHaveBeenCalled();
-      expect(ctx.clip).toHaveBeenCalled();
-      // DW-888 regression: the live stroke is clipped to the image (alignment offset + image size on screen)
-      const { alignmentOffset, stageWidth, stageHeight, stageScale } = region.parent;
-      expect(ctx.rect).toHaveBeenCalledWith(
-        alignmentOffset.x,
-        alignmentOffset.y,
-        stageWidth * stageScale,
-        stageHeight * stageScale,
-      );
+      region.addPoint(1, 2);
+      region.addPoint(3, 4);
+      region.addPoint(5, 6);
+      expect(batchDraw).toHaveBeenCalled();
+      expect(region.getPendingStroke().points).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(region.touches).toHaveLength(0);
+      region.endPath();
+      expect(region.getPendingStroke()).toBeNull();
+      expect(Array.from(region.touches[0].points)).toEqual([1, 2, 3, 4, 5, 6]);
     });
 
-    // DW-887: mousedown + mouseup at the same spot (a click) shows a dot while drawing
-    it("preDraw shows a dot for a click without movement", () => {
-      ff.reset();
-      const ctx = {
-        save: mock(),
-        restore: mock(),
-        beginPath: mock(),
-        moveTo: mock(),
-        lineTo: mock(),
-        rect: mock(),
-        clip: mock(),
-        lineCap: "",
-        lineJoin: "",
-        lineWidth: 0,
-        strokeStyle: "",
-        fillStyle: "",
-        globalCompositeOperation: "",
-        stroke: mock(),
-        arc: mock(),
-        fill: mock(),
-      };
-      region.setLayerRef({
-        getLayer: () => ({ canvas: { context: ctx } }),
-        canvas: { _canvas: { style: {} }, context: ctx, width: 100, height: 100 },
-      });
+    it("keeps a click available as a pending dot, then commits it exactly once", () => {
       region.beginPath({ type: "add", strokeWidth: 20 });
-      region.addPoint(10, 10); // mousedown
-      region.addPoint(10, 10); // mouseup at the same point
-      expect(ctx.arc).toHaveBeenCalled();
-      const [, , radius] = ctx.arc.mock.calls.at(-1);
-      expect(radius).toBe(ctx.lineWidth / 2);
-      expect(ctx.fill).toHaveBeenCalled();
-      expect(ctx.stroke).not.toHaveBeenCalled();
+      region.addPoint(10, 10);
+      expect(region.getPendingStroke().points).toEqual([10, 10]);
+      region.endPath();
+      expect(region.getPendingStroke()).toBeNull();
+      expect(region.touches).toHaveLength(1);
+      expect(Array.from(region.touches[0].points)).toEqual([10, 10, 10, 10]);
     });
 
-    it("preDraw uses cachedPoints when multiple points added", () => {
-      ff.reset();
-      const ctx = {
-        save: mock(),
-        restore: mock(),
-        beginPath: mock(),
-        moveTo: mock(),
-        lineTo: mock(),
-        rect: mock(),
-        clip: mock(),
-        lineCap: "",
-        lineJoin: "",
-        lineWidth: 0,
-        strokeStyle: "",
-        globalCompositeOperation: "",
-        stroke: mock(),
-        arc: mock(),
-        fill: mock(),
-      };
-      const mockRef = {
-        getLayer: () => ({ canvas: { context: ctx } }),
-        canvas: { _canvas: { style: {} }, context: ctx, width: 100, height: 100 },
-      };
-      region.setLayerRef(mockRef);
-      region.beginPath({ type: "add", strokeWidth: 25 });
-      region.addPoint(1, 1);
-      region.addPoint(2, 2);
-      region.addPoint(3, 3);
-      region.addPoint(4, 4);
-      region.addPoint(5, 5);
-      expect(ctx.moveTo).toHaveBeenCalled();
-      expect(ctx.lineTo).toHaveBeenCalled();
-      ff.reset();
+    it("matches committed coordinates and composite operations", () => {
+      region.setScale(2, 4);
+      region.beginPath({ type: "eraser", strokeWidth: 20 });
+      region.addPoint(10, 20);
+      region.addPoint(30, 40);
+      const pending = region.getPendingStroke();
+      expect(pending.compositeOperation).toBe("destination-out");
+      region.endPath();
+      expect(pending.points).toEqual(Array.from(region.touches[0].points));
+      expect(pending.strokeWidth).toBe(region.touches[0].strokeWidth);
     });
   });
 
@@ -783,6 +714,29 @@ describe("BrushRegion", () => {
         fireEvent.mouseOut(segmentationGroup);
       });
       expect(setHighlightSpy).toHaveBeenCalledWith(false);
+      setHighlightSpy.mockRestore();
+    });
+
+    it("does not mutate hover state on mask entry or exit during an active stroke", () => {
+      const drawingRoot = TestRoot.create({
+        annotationStore: { selected: createMockAnnotation({ isDrawing: true }) },
+        settings: { showLabels: false },
+        image: { id: "img1", name: "image" },
+        region: { id: "drawing-brush", pid: "drawing-brush", object: "image", touches: [] },
+      });
+      drawingRoot.image.setAnnotation(drawingRoot.annotationStore.selected);
+      stubRegionObjectRefs(drawingRoot);
+      drawingRoot.region.setHighlight(true);
+      const setHighlightSpy = spyOn(drawingRoot.region, "setHighlight");
+      const { getAllByTestId } = render(<HtxBrush item={drawingRoot.region} />);
+      const group = getAllByTestId("konva-group").find((g) => g.getAttribute("name") === "segmentation");
+      act(() => {
+        fireEvent.mouseOver(group);
+        fireEvent.mouseOut(group);
+      });
+      expect(setHighlightSpy).not.toHaveBeenCalled();
+      expect(drawingRoot.annotationStore.selected.regionStore.unhighlightAll).not.toHaveBeenCalled();
+      expect(drawingRoot.region.highlighted).toBe(true);
       setHighlightSpy.mockRestore();
     });
 
