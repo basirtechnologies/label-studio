@@ -29,7 +29,7 @@ Brush hover now respects the editor's existing `getSkipInteractions` policy (bru
 
 The standalone browser test covers editor submission callbacks and JSON reopening; backend mask-coverage tests separately cover actual POST/PATCH/PUT/GET transport and stored pixel coverage, including author/audit and webhook rollback regressions. No production annotations are edited or repaired.
 
-DW-892 page grouping and DW-896 visibility remain in the combined testing branch. User testing approved those two features. The original intermittent DW-894 and DW-895 issues remain unresolved and their PRs remain drafts; fixing this regression is not evidence that those separate reports are resolved.
+DW-892 page grouping and DW-896 visibility remain in the combined testing branch. User testing approved those two features. The original intermittent DW-894 and DW-895 issues remain unresolved. Consolidating their validated partial fixes does not resolve either production report or authorize marking either Jira task resolved.
 
 ## Subsequent opacity correction
 
