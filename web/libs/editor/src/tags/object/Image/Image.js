@@ -378,7 +378,14 @@ const Model = types
       // As the serialization also happens during region creation,
       // we have to forsee this scenario and avoid using raw result
       // as it can only be present for already created (submitter) regions
-      const useRawResult = !currentImageEntity.imageLoaded && isDefined(region._rawResult);
+      // Brush serialization already composes the current native-resolution raster, independent of display loading.
+      // Falling back to the original wire row here discards later strokes while an image is loading.
+      const hasCurrentBrushRaster =
+        region.type === "brushregion" &&
+        value.rle?.length > 0 &&
+        currentImageEntity.naturalWidth > 1 &&
+        currentImageEntity.naturalHeight > 1;
+      const useRawResult = !currentImageEntity.imageLoaded && isDefined(region._rawResult) && !hasCurrentBrushRaster;
 
       return useRawResult
         ? structuredClone(region._rawResult)
